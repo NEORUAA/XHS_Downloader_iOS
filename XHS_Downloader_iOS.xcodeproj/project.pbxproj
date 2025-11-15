@@ -24,7 +24,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		7CC390E92EC89A9B00D373D9 /* XHS_Downloader_iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = XHS_Downloader_iOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7CC390E92EC89A9B00D373D9 /* 小红书下载器.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "小红书下载器.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		7CC390F62EC89A9C00D373D9 /* XHS_Downloader_iOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XHS_Downloader_iOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7CC391002EC89A9C00D373D9 /* XHS_Downloader_iOSUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XHS_Downloader_iOSUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -85,7 +85,7 @@
 		7CC390EA2EC89A9B00D373D9 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				7CC390E92EC89A9B00D373D9 /* XHS_Downloader_iOS.app */,
+				7CC390E92EC89A9B00D373D9 /* 小红书下载器.app */,
 				7CC390F62EC89A9C00D373D9 /* XHS_Downloader_iOSTests.xctest */,
 				7CC391002EC89A9C00D373D9 /* XHS_Downloader_iOSUITests.xctest */,
 			);
@@ -114,7 +114,7 @@
 			packageProductDependencies = (
 			);
 			productName = XHS_Downloader_iOS;
-			productReference = 7CC390E92EC89A9B00D373D9 /* XHS_Downloader_iOS.app */;
+			productReference = 7CC390E92EC89A9B00D373D9 /* 小红书下载器.app */;
 			productType = "com.apple.product-type.application";
 		};
 		7CC390F52EC89A9C00D373D9 /* XHS_Downloader_iOSTests */ = {
@@ -393,7 +393,7 @@
 		7CC3910B2EC89A9C00D373D9 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = xhsdn;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -411,8 +411,8 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "neoruaa.XHS-Downloader-iOS";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.neoruaa.xhsdn;
+				PRODUCT_NAME = "小红书下载器";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -426,7 +426,7 @@
 		7CC3910C2EC89A9C00D373D9 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = xhsdn;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -444,8 +444,8 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "neoruaa.XHS-Downloader-iOS";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.neoruaa.xhsdn;
+				PRODUCT_NAME = "小红书下载器";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;

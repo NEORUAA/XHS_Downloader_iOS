@@ -232,6 +232,7 @@ struct LogListView: View {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(.thinMaterial)
             )
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .onChange(of: logs.last?.id) { id in
                 guard let id else { return }
                 DispatchQueue.main.async {
@@ -279,6 +280,7 @@ struct MediaGridView: View {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(.thinMaterial)
             )
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .padding(.bottom, 2)
             .onChange(of: items.last?.id) { id in
                 guard let id else { return }
@@ -335,16 +337,15 @@ struct MediaTile: View {
 }
 
 struct SettingsSheet: View {
+    @Environment(\.openURL) private var openURL
+
     var body: some View {
-        VStack(spacing: 16) {
-            Capsule()
-                .fill(Color.secondary.opacity(0))
-                .frame(width: 44, height: 5)
-                .padding(.top, 8)
+        VStack(spacing: 16) {                
 
             Text("设置")
                 .font(.title3)
                 .fontWeight(.semibold)
+                .padding(.top, 10)
 
             Spacer()
 
@@ -354,9 +355,26 @@ struct SettingsSheet: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
 
+            Button {
+                if let githubURL = URL(string: "https://github.com/NEORUAA/XHS_Downloader_iOS") {
+                    openURL(githubURL)
+                }
+            } label: {
+                HStack {
+                    Spacer()
+                    Text("打开GitHub仓库")
+                        .fontWeight(.semibold)
+                        .padding(10)
+                    Spacer()
+                }
+            }
+            .glassEffect()
+//            .frame(maxWidth: 200)
+            .buttonStyle(.borderedProminent)
+
             Spacer()
         }
-        .padding(.bottom, 24)
+        .padding(24)
     }
 }
 
