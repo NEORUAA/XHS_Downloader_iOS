@@ -70,7 +70,7 @@ struct ContentView: View {
         }
         .environmentObject(viewModel)
         .sheet(isPresented: $showingSettings) {
-            NavigationView {
+            AdaptiveNavigationContainer {
                 SettingsSheet()
                     .navigationTitle("设置")
                     .navigationBarTitleDisplayMode(.inline)
@@ -86,12 +86,33 @@ struct ContentView: View {
     }
 }
 
+struct AdaptiveNavigationContainer<Content: View>: View {
+    private let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        if #available(iOS 16.0, *) {
+            NavigationStack {
+                content
+            }
+        } else {
+            NavigationView {
+                content
+            }
+            .navigationViewStyle(StackNavigationViewStyle())
+        }
+    }
+}
+
 struct HomeView: View {
     @EnvironmentObject var viewModel: DownloaderViewModel
     @Binding var showingSettings: Bool
 
     var body: some View {
-        NavigationView {
+        AdaptiveNavigationContainer {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 12) {
@@ -189,7 +210,7 @@ struct LogView: View {
     @Binding var showingSettings: Bool
 
     var body: some View {
-        NavigationView {
+        AdaptiveNavigationContainer {
             ScrollView {
                 VStack(spacing: 0) {
                     if viewModel.showProgress || viewModel.isDownloading {
@@ -266,7 +287,7 @@ struct DownloadsView: View {
     @Binding var showingSettings: Bool
 
     var body: some View {
-        NavigationView {
+        AdaptiveNavigationContainer {
             ZStack {
                 Color(UIColor.systemGroupedBackground)
                     .ignoresSafeArea()
