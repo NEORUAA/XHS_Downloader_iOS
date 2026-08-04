@@ -1,817 +1,1175 @@
-//
-//  ContentView.swift
-//  XHS_Downloader_iOS
-//
-//  Created by NEORUAA Q on 2025/11/15.
-//
-
 import SwiftUI
-import AVFoundation
+import Photos
+import PhotosUI
+import WebKit
 import UIKit
-import QuickLook
-
-// MARK: - Adaptive Glass Effect for iOS Version Compatibility
-extension View {
-    @ViewBuilder
-    func adaptiveGlassEffect() -> some View {
-        if #available(iOS 26.0, *) {
-            self.glassEffect()
-        } else {
-            self.background(.ultraThinMaterial, in: Capsule())
-        }
-    }
-
-    @ViewBuilder
-    func adaptiveGlassEffect<S: Shape>(in shape: S) -> some View {
-        if #available(iOS 26.0, *) {
-            self.glassEffect(.regular, in: shape)
-        } else {
-            self.background(.ultraThinMaterial, in: shape)
-        }
-    }
-}
+import UniformTypeIdentifiers
 
 struct ContentView: View {
-    @StateObject private var viewModel = DownloaderViewModel()
-    @State private var showingSettings = false
-    @State private var selectedTab = 0
+    @ObservedObject var coordinator: DownloadCoordinator
+    @ObservedObject var settings: AppSettings
+    @Environment(\.scenePhase) private var scenePhase
 
-    var body: some View {
-        TabView(selection: $selectedTab) {
-            HomeView(showingSettings: $showingSettings)
-                .tag(0)
-                .tabItem {
-                    Image(systemName: "link")
-                    Text("操作")
-                }
-
-            LogView(showingSettings: $showingSettings)
-                .tag(1)
-                .tabItem {
-                    Image(systemName: "info.circle")
-                    Text("日志")
-                }
-
-            DownloadsView(showingSettings: $showingSettings)
-                .tag(2)
-                .tabItem {
-                    Image(systemName: "arrow.down")
-                    Text("下载")
-                }
-        }
-        .onChange(of: viewModel.shouldSwitchToLogTab) { shouldSwitch in
-            if shouldSwitch {
-                selectedTab = 1
-                // 重置标志
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    viewModel.shouldSwitchToLogTab = false
-                }
-            }
-        }
-        .environmentObject(viewModel)
-        .sheet(isPresented: $showingSettings) {
-            AdaptiveNavigationContainer {
-                SettingsSheet()
-                    .navigationTitle("设置")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            Button("完成") {
-                                showingSettings = false
-                            }
-                        }
-                    }
-            }
-        }
-    }
-}
-
-struct AdaptiveNavigationContainer<Content: View>: View {
-    private let content: Content
-
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-
-    var body: some View {
-        if #available(iOS 16.0, *) {
-            NavigationStack {
-                content
-            }
-        } else {
-            NavigationView {
-                content
-            }
-            .navigationViewStyle(StackNavigationViewStyle())
-        }
-    }
-}
-
-struct HomeView: View {
-    @EnvironmentObject var viewModel: DownloaderViewModel
-    @Binding var showingSettings: Bool
-
-    var body: some View {
-        AdaptiveNavigationContainer {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("输入链接")
-                            .font(.headline)
-                            .padding(.horizontal, 16)
-
-                        ShareInputField(text: $viewModel.shareText)
-                            .padding(.horizontal, 16)
-
-                        HStack(spacing: 10) {
-                            Button {
-                                pasteLinkFromClipboard()
-                            } label: {
-                                HStack {
-                                    Spacer()
-                                    Text("粘贴链接")
-                                        .fontWeight(.semibold)
-                                        .padding(.vertical, 10)
-                                    Spacer()
-                                }
-                            }
-                            .adaptiveGlassEffect()
-                            .buttonStyle(.bordered)
-                            .disabled(viewModel.isDownloading)
-                            .frame(maxWidth: .infinity)
-
-                            Button {
-                                viewModel.startDownload()
-                            } label: {
-                                HStack {
-                                    Spacer()
-                                    Text(viewModel.isDownloading ? "下载中…" : "开始下载")
-                                        .fontWeight(.semibold)
-                                        .padding(.vertical, 10)
-                                    Spacer()
-                                }
-                            }
-                            .adaptiveGlassEffect()
-                            .buttonStyle(.borderedProminent)
-                            .disabled(viewModel.shareText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isDownloading)
-                            .frame(maxWidth: .infinity)
-                        }
-                        .padding(.horizontal, 16)
-
-                        Button {
-                            viewModel.copyDescription { message in
-                                // 在实际应用中，可以使用更合适的UI反馈
-                                print(message) // 临时输出到控制台
-                            }
-                        } label: {
-                            HStack {
-                                Spacer()
-                                Text("提取文案")
-                                    .fontWeight(.semibold)
-                                    .padding(.vertical, 10)
-                                Spacer()
-                            }
-                        }
-                        .adaptiveGlassEffect()
-                        .buttonStyle(.bordered)
-                        .disabled(viewModel.shareText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isDownloading)
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 16)
-                    }
-
-                    // 工具部分暂时为空，因为移除了"网页爬取模式"按钮
-                }
-                .padding(.top, 10)
-            }
-            .background(Color(UIColor.systemGroupedBackground))
-            .navigationTitle("小红书下载器")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingSettings = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                    }
-                }
-            }
-        }
-    }
-
-    private func pasteLinkFromClipboard() {
-        if let clipboardContent = UIPasteboard.general.string {
-            viewModel.shareText = clipboardContent
-        }
-    }
-}
-
-struct LogView: View {
-    @EnvironmentObject var viewModel: DownloaderViewModel
-    @Binding var showingSettings: Bool
-
-    var body: some View {
-        AdaptiveNavigationContainer {
-            ScrollView {
-                VStack(spacing: 0) {
-                    if viewModel.showProgress || viewModel.isDownloading {
-                        VStack(spacing: 6) {
-                            HStack {
-                                Text("进度")
-                                Spacer()
-                                Text(viewModel.progressText.isEmpty ? "--" : viewModel.progressText)
-                                    .foregroundColor(.gray)
-                            }
-                            ProgressView(value: viewModel.progressValue)
-                                .progressViewStyle(LinearProgressViewStyle())
-                        }
-                        .padding(.top, 10)
-                        .padding(.horizontal, 16)
-                    }
-
-//                    Text("日志状态")
-//                        .font(.headline)
-//                        .padding(.horizontal, 16)
-
-                    if viewModel.logEntries.isEmpty {
-                        VStack {
-                            Text("暂无内容，开始下载后会显示日志")
-                                .foregroundColor(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .padding(16)
-                        }
-                    } else {
-                        ScrollViewReader { proxy in
-                            ScrollView {
-                                LazyVStack(alignment: .leading, spacing: 6) {
-                                    ForEach(viewModel.logEntries) { log in
-                                        Text(log.displayText)
-                                            .font(.system(.caption, design: .monospaced))
-                                            .foregroundColor(log.id == viewModel.logEntries.last?.id ? .accentColor : .primary)
-                                            .padding(.vertical, 2)
-                                            .id(log.id)
-                                    }
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(16)
-                            }
-                            .onChange(of: viewModel.logEntries.last?.id) { id in
-                                guard let id else { return }
-                                DispatchQueue.main.async {
-                                    withAnimation {
-                                        proxy.scrollTo(id, anchor: .bottom)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            .background(Color(UIColor.systemGroupedBackground))
-            .navigationTitle("日志状态")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingSettings = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                    }
-                }
-            }
-        }
-    }
-}
-
-struct DownloadsView: View {
-    @EnvironmentObject var viewModel: DownloaderViewModel
-    @Binding var showingSettings: Bool
-
-    var body: some View {
-        AdaptiveNavigationContainer {
-            ZStack {
-                Color(UIColor.systemGroupedBackground)
-                    .ignoresSafeArea()
-                
-                if viewModel.mediaItems.isEmpty {
-                    VStack {
-                        Text("暂无内容，开始下载后会显示缩略图")
-                            .foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(16)
-                        
-                        Spacer() // 向下顶
-                    }
-                } else {
-                    VStack(spacing: 0) {
-                        WaterfallGrid(viewModel.mediaItems, columns: 2, spacing: 12) { item in
-                            MediaTile(item: item)
-                        }
-                    }
-                    .ignoresSafeArea(edges: .all)
-                }
-            }
-            .navigationTitle("已下载")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingSettings = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                    }
-                }
-            }
-        }
-    }
-}
-
-
-struct ShareInputField: View {
-    @Binding var text: String
-    @FocusState private var isFocused: Bool
-    private let placeholder = "苹果iPhone原生4K壁... http://xhslink.com/o/8xU2muQboVH 复制后打开【小红书】查看笔记！"
+    @State private var filter: TaskFilter = .all
+    @State private var showsSettings = false
+    @State private var showsManualInput = false
+    @State private var showsWebCapture = false
+    @State private var clipboardHasLink = false
+    @State private var taskToDelete: DownloadTaskRecord?
 
     var body: some View {
         Group {
-            if #available(iOS 16.0, *) {
-                ZStack(alignment: .topTrailing) {
-                    TextField(placeholder, text: $text, axis: .vertical)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .lineLimit(3...6)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-                        )
-//                        .glassEffect(in: .rect(cornerRadius: 18))
-                        .focused($isFocused)
-
-                    if !text.isEmpty {
-                        ClearButton(text: $text)
-                            .padding(.trailing, 8)
-                            .padding(.top, 8)
+            if #available(iOS 16, *) {
+                NavigationStack { taskCenter }
+            } else {
+                NavigationView { taskCenter }
+                    .navigationViewStyle(.stack)
+            }
+        }
+        .sheet(isPresented: $showsSettings) {
+            SettingsView(settings: settings)
+        }
+        .sheet(isPresented: $showsManualInput) {
+            ManualInputView(coordinator: coordinator)
+        }
+        .sheet(isPresented: $showsWebCapture) {
+            WebCaptureView { text in coordinator.enqueue(text) }
+        }
+        .sheet(item: $coordinator.selectionState) { _ in
+            SelectiveDownloadView(coordinator: coordinator)
+                .interactiveDismissDisabled()
+        }
+        .alert(
+            L10n.text("common.notice"),
+            isPresented: Binding(
+                get: { coordinator.alertMessage != nil },
+                set: { if !$0 { coordinator.alertMessage = nil } }
+            ),
+            actions: { Button(L10n.text("common.ok"), role: .cancel) { coordinator.alertMessage = nil } },
+            message: { Text(coordinator.alertMessage ?? "") }
+        )
+        .confirmationDialog(
+            L10n.text("task.delete.title"),
+            isPresented: Binding(
+                get: { taskToDelete != nil },
+                set: { if !$0 { taskToDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let task = taskToDelete {
+                Button(L10n.text("task.delete.history"), role: .destructive) {
+                    Task { await coordinator.deleteTask(taskID: task.id, deletePhotos: false) }
+                    taskToDelete = nil
+                }
+                if !task.mediaAssets.isEmpty {
+                    Button(L10n.text("task.delete.photos"), role: .destructive) {
+                        Task { await coordinator.deleteTask(taskID: task.id, deletePhotos: true) }
+                        taskToDelete = nil
                     }
+                }
+            }
+            Button(L10n.text("common.cancel"), role: .cancel) { taskToDelete = nil }
+        }
+        .onAppear {
+            coordinator.consumeSharedInbox()
+            refreshClipboardSuggestionFromPasteboard()
+        }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active {
+                coordinator.consumeSharedInbox()
+                refreshClipboardSuggestionFromPasteboard()
+                UIApplication.shared.isIdleTimerDisabled = settings.keepScreenAwake
+            }
+        }
+    }
+
+    private var taskCenter: some View {
+        List {
+            Section {
+                filterPicker
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+            }
+
+            let visibleTasks = coordinator.filteredTasks(for: filter)
+            if visibleTasks.isEmpty {
+                Section {
+                    ContentUnavailableCard(filter: filter)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
                 }
             } else {
-                legacyTextEditor
-            }
-        }
-    }
-
-    private var legacyTextEditor: some View {
-        ZStack(alignment: .topLeading) {
-            if text.isEmpty {
-                Text(placeholder)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                    .allowsHitTesting(false)
-            }
-
-            TextEditor(text: $text)
-                .focused($isFocused)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 12)
-                .frame(minHeight: 90, maxHeight: 130)
-                .background(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-                )
-                .overlay(alignment: .topTrailing) {
-                    if !text.isEmpty {
-                        ClearButton(text: $text)
-                            .padding(12)
+                Section {
+                    ForEach(visibleTasks) { task in
+                        NavigationLink {
+                            TaskDetailView(taskID: task.id, coordinator: coordinator)
+                        } label: {
+                            TaskCardView(task: task, coordinator: coordinator)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { taskToDelete = task } label: {
+                                Label(L10n.text("common.delete"), systemImage: "trash")
+                            }
+                        }
                     }
                 }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .xhsCompactSectionSpacing()
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            floatingBottomActions
+        }
+        .accessibilityIdentifier("task-center-list")
+        .navigationTitle(L10n.text("app.title"))
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { showsSettings = true } label: {
+                    Image(systemName: "gearshape")
+                }
+                .accessibilityLabel(L10n.text("settings.title"))
+            }
         }
     }
 
-    private struct ClearButton: View {
-        @Binding var text: String
+    private var filterPicker: some View {
+        Picker(L10n.text("filter.title"), selection: $filter) {
+            Text(L10n.text("filter.all")).tag(TaskFilter.all)
+            Text(L10n.format("filter.waiting.count", coordinator.waitingCount)).tag(TaskFilter.waiting)
+            Text(L10n.format("filter.failed.count", coordinator.failedCount)).tag(TaskFilter.failed)
+        }
+        .pickerStyle(.segmented)
+        .padding(.top, 4)
+    }
 
-        var body: some View {
-            Button {
-                text = ""
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.secondary)
-                    .background(.thinMaterial, in: Circle())
+    private var clipboardSuggestion: some View {
+        Button {
+            if let text = UIPasteboard.general.string {
+                coordinator.enqueue(text)
+                clipboardHasLink = false
             }
-            .buttonStyle(.plain)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "doc.on.clipboard")
+                    .font(.title3)
+                    .foregroundStyle(.red)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(L10n.text("clipboard.suggestion.title"))
+                        .font(.headline)
+                    Text(L10n.text("clipboard.suggestion.subtitle"))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .multilineTextAlignment(.leading)
+            .padding(16)
+            .frame(width: 320, alignment: .leading)
             .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
-}
 
-struct MediaTile: View {
-    let item: MediaPreviewItem
-    @State private var thumbnail: UIImage?
-    @State private var aspectRatio: CGFloat = 1
-    @State private var isLoading: Bool = true
-    @State private var resolution: String = "" // 分辨率状态
+    @ViewBuilder
+    private var clipboardSuggestionPopoverContent: some View {
+        if #available(iOS 16.4, *) {
+            clipboardSuggestion
+                .presentationCompactAdaptation(.popover)
+        } else {
+            clipboardSuggestion
+        }
+    }
 
-    var body: some View {
-        VStack(spacing: 0) {
-            // 图片预览区域
-            ZStack(alignment: .bottomTrailing) {
-                Group {
-                    if let image = thumbnail, !isLoading {
-                        Image(uiImage: image)
-                            .resizable()
-                            .aspectRatio(aspectRatio, contentMode: .fill) // 使用fill模式填充
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .clipped()
-                    } else {
-                        Color.secondary.opacity(0.1)
-                            .aspectRatio(aspectRatio, contentMode: .fill)
-                            .overlay(
-                                ProgressView()
-                                    .controlSize(.small)
-                            )
+    private var floatingBottomActions: some View {
+        HStack(spacing: 12) {
+            primaryAction
+                .frame(maxWidth: .infinity, minHeight: 56)
+                .popover(
+                    isPresented: Binding(
+                        get: { clipboardHasLink && settings.clipboardSuggestions },
+                        set: { if !$0 { clipboardHasLink = false } }
+                    ),
+                    attachmentAnchor: .rect(.bounds),
+                    arrowEdge: .bottom
+                ) {
+                    clipboardSuggestionPopoverContent
+                }
+                .shadow(color: .black.opacity(0.12), radius: 12, y: 6)
+
+            Menu {
+                Button { showsManualInput = true } label: {
+                    Label(L10n.text("action.manual_input"), systemImage: "keyboard")
+                }
+                Button { showsWebCapture = true } label: {
+                    Label(L10n.text("action.web_capture"), systemImage: "safari")
+                }
+                if !coordinator.tasks.isEmpty {
+                    Button(role: .destructive) { coordinator.clearHistory() } label: {
+                        Label(L10n.text("action.clear_history"), systemImage: "trash.slash")
                     }
                 }
-                .onAppear {
-                    loadThumbnail()
-                }
-
-                if item.isVideo {
-                    Image(systemName: "play.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(.white)
-                        .shadow(radius: 4)
-                        .padding(8)
-                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 56, height: 56)
+                    .contentShape(Circle())
             }
-            .frame(maxHeight: .infinity, alignment: .top)
-
-            // 底部信息栏
-            HStack {
-                // 文件大小
-                Text(formatFileSize(item.fileSize))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-
-                Spacer()
-
-                // 分辨率显示在footer右侧
-                if !resolution.isEmpty {
-                    Text(resolution)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .buttonStyle(.plain)
+            .frame(width: 56, height: 56)
+            .xhsCircularGlass()
+            .shadow(color: .black.opacity(0.12), radius: 12, y: 6)
+            .accessibilityLabel(L10n.text("common.more"))
+            .accessibilityIdentifier("more-actions-button")
         }
-        .background((Color(UIColor.systemBackground)))
-        .adaptiveGlassEffect(in: .rect(cornerRadius: 16))
-        .onTapGesture {
-            // 使用系统图库预览媒体文件
-            openSystemPreview()
+        .frame(maxWidth: 720)
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var primaryAction: some View {
+        if #available(iOS 16, *) {
+            FullWidthPasteControl { values in
+                coordinator.enqueue(values.joined(separator: "\n"))
+                clipboardHasLink = false
+            }
+            .frame(maxWidth: .infinity, minHeight: 56, maxHeight: 56)
+            .xhsPrimaryGlass()
+        } else {
+            Button {
+                if let text = UIPasteboard.general.string { coordinator.enqueue(text) }
+            } label: {
+                primaryActionLabel
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.white)
+            .frame(height: 56)
+            .xhsPrimaryGlass()
+            .accessibilityIdentifier("primary-paste-button")
         }
     }
 
-    private func loadThumbnail() {
-        // 防止重复加载
-        if thumbnail != nil && !isLoading {
+    private var primaryActionLabel: some View {
+        Label(L10n.text("action.paste_download"), systemImage: "arrow.down.circle.fill")
+            .font(.headline)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+    }
+
+    private func refreshClipboardSuggestionFromPasteboard() {
+        guard settings.clipboardSuggestions,
+              UIPasteboard.general.hasStrings,
+              let text = UIPasteboard.general.string else {
+            clipboardHasLink = false
             return
         }
-
-        isLoading = true
-
-        Task {
-            if let image = await ThumbnailGenerator.shared.thumbnail(for: item) {
-                await MainActor.run {
-                    thumbnail = image
-                    let ratio = image.size.width / max(image.size.height, 1)
-                    aspectRatio = ratio.isFinite && ratio > 0 ? ratio : 1
-                    isLoading = false
-
-                    // 获取原始文件的分辨率
-                    if item.isVideo {
-                        // 对于视频，获取视频尺寸
-                        getVideoResolution { resolutionStr in
-                            resolution = resolutionStr
-                        }
-                    } else {
-                        // 对于图片，使用图像尺寸
-                        resolution = "\(Int(image.size.width))×\(Int(image.size.height))"
-                    }
-
-                    // 计算包含footer的总高度 - 使用aspectRatio来计算高度
-                    let footerHeight: CGFloat = 40 // 底部信息栏高度
-                    // 由于我们无法在这里知道确切的宽度，我们将高度信息发送给布局系统
-                    // 布局系统将在知道确切宽度时计算实际高度
-                    let calculatedHeight = CGFloat(1) / aspectRatio // 使用倒数来表示高度比例
-                    let totalHeight = calculatedHeight + footerHeight
-
-                    // 通知布局更新高度
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        NotificationCenter.default.post(
-                            name: NSNotification.Name("MediaTileHeightUpdated"),
-                            object: nil,
-                            userInfo: [
-                                "itemId": item.id,
-                                "aspectRatio": aspectRatio,
-                                "height": totalHeight,
-                                "hasFooter": true // 标记此项目有footer
-                            ]
-                        )
-                    }
-                }
-            } else {
-                await MainActor.run {
-                    isLoading = false
-                }
-            }
-        }
-    }
-
-    private func getVideoResolution(completion: @escaping (String) -> Void) {
-        let asset = AVAsset(url: item.localURL)
-        let key = "tracks"
-
-        asset.loadValuesAsynchronously(forKeys: [key]) {
-            var error: NSError?
-            let status = asset.statusOfValue(forKey: key, error: &error)
-
-            DispatchQueue.main.async {
-                if status == .loaded {
-                    if let track = asset.tracks(withMediaType: .video).first {
-                        let size = track.naturalSize.applying(track.preferredTransform)
-                        let width = abs(size.width)
-                        let height = abs(size.height)
-                        completion("\(Int(width))×\(Int(height))")
-                    } else {
-                        completion("未知")
-                    }
-                } else {
-                    completion("未知")
-                }
-            }
-        }
-    }
-
-    private func formatFileSize(_ size: Int64) -> String {
-        let bytes = Double(size)
-        switch bytes {
-        case let x where x >= 1_000_000_000:
-            return String(format: "%.2f GB", x / (1_000_000_000))
-        case let x where x >= 1_000_000:
-            return String(format: "%.1f MB", x / (1_000_000))
-        case let x where x >= 1_000:
-            return String(format: "%.1f KB", x / (1_000))
-        default:
-            return "\(Int(bytes)) B"
-        }
+        clipboardHasLink = XHSURLDetector.containsSupportedLink(text)
     }
 }
 
-// MARK: - MediaTile Preview Functionality
-extension MediaTile {
-    private func openSystemPreview() {
-        // 使用QuickLook预览文件
-        let previewController = MediaPreviewController(url: item.localURL)
-        previewController.modalPresentationStyle = .fullScreen
+@available(iOS 16.0, *)
+private struct FullWidthPasteControl: UIViewRepresentable {
+    let onPaste: ([String]) -> Void
 
-        // 获取当前的ViewController
-        if let rootVC = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .first?.windows
-            .first?.rootViewController {
+    func makeUIView(context: Context) -> PasteControlContainerView {
+        PasteControlContainerView(onPaste: onPaste)
+    }
 
-            // 寻找最顶层的ViewController
-            let topVC = rootVC.findBestViewController()
-            topVC.present(previewController, animated: true)
-        }
+    func updateUIView(_ uiView: PasteControlContainerView, context: Context) {
+        uiView.onPaste = onPaste
     }
 }
 
-// MARK: - Media Preview Controller
-class MediaPreviewController: QLPreviewController {
-    private let url: URL
+@available(iOS 16.0, *)
+private final class PasteControlContainerView: UIView {
+    var onPaste: ([String]) -> Void
 
-    init(url: URL) {
-        self.url = url
-        super.init(nibName: nil, bundle: nil)
+    private let pasteControl: UIPasteControl
+
+    init(onPaste: @escaping ([String]) -> Void) {
+        self.onPaste = onPaste
+
+        let configuration = UIPasteControl.Configuration()
+        configuration.displayMode = .labelOnly
+        configuration.cornerStyle = .fixed
+        configuration.cornerRadius = 18
+        configuration.baseForegroundColor = .clear
+        configuration.baseBackgroundColor = .clear
+        pasteControl = UIPasteControl(configuration: configuration)
+
+        super.init(frame: .zero)
+
+        pasteConfiguration = UIPasteConfiguration(
+            acceptableTypeIdentifiers: [UTType.plainText.identifier, UTType.url.identifier]
+        )
+        pasteControl.target = self
+        pasteControl.translatesAutoresizingMaskIntoConstraints = false
+        pasteControl.backgroundColor = .clear
+        // Keep the system paste control in the hit-test chain while letting the
+        // app's accent-tinted glass surface provide the visible appearance.
+        pasteControl.layer.opacity = 0.011
+        pasteControl.accessibilityIdentifier = "primary-paste-button"
+        pasteControl.accessibilityLabel = L10n.text("action.paste_download")
+        addSubview(pasteControl)
+
+        let iconView = UIImageView(image: UIImage(systemName: "arrow.down.circle.fill"))
+        iconView.tintColor = .white
+        iconView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
+        iconView.setContentHuggingPriority(.required, for: .horizontal)
+
+        let titleLabel = UILabel()
+        titleLabel.text = L10n.text("action.paste_download")
+        titleLabel.textColor = .white
+        titleLabel.font = .preferredFont(forTextStyle: .headline)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.minimumScaleFactor = 0.8
+        titleLabel.adjustsFontSizeToFitWidth = true
+
+        let contentStack = UIStackView(arrangedSubviews: [iconView, titleLabel])
+        contentStack.axis = .horizontal
+        contentStack.alignment = .center
+        contentStack.spacing = 8
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+
+        let contentOverlay = UIView()
+        if #available(iOS 26.0, *) {
+            contentOverlay.backgroundColor = .clear
+        } else {
+            contentOverlay.backgroundColor = .tintColor
+        }
+        contentOverlay.layer.cornerRadius = 18
+        contentOverlay.layer.cornerCurve = .continuous
+        contentOverlay.clipsToBounds = true
+        contentOverlay.isUserInteractionEnabled = false
+        contentOverlay.translatesAutoresizingMaskIntoConstraints = false
+        contentOverlay.addSubview(contentStack)
+        addSubview(contentOverlay)
+
+        NSLayoutConstraint.activate([
+            pasteControl.leadingAnchor.constraint(equalTo: leadingAnchor),
+            pasteControl.trailingAnchor.constraint(equalTo: trailingAnchor),
+            pasteControl.topAnchor.constraint(equalTo: topAnchor),
+            pasteControl.bottomAnchor.constraint(equalTo: bottomAnchor),
+            contentOverlay.leadingAnchor.constraint(equalTo: leadingAnchor),
+            contentOverlay.trailingAnchor.constraint(equalTo: trailingAnchor),
+            contentOverlay.topAnchor.constraint(equalTo: topAnchor),
+            contentOverlay.bottomAnchor.constraint(equalTo: bottomAnchor),
+            contentStack.centerXAnchor.constraint(equalTo: contentOverlay.centerXAnchor),
+            contentStack.centerYAnchor.constraint(equalTo: contentOverlay.centerYAnchor),
+            contentStack.leadingAnchor.constraint(greaterThanOrEqualTo: contentOverlay.leadingAnchor, constant: 18),
+            contentStack.trailingAnchor.constraint(lessThanOrEqualTo: contentOverlay.trailingAnchor, constant: -18)
+        ])
     }
 
     required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
+        nil
     }
 
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        self.dataSource = self
-    }
-}
+    override func paste(itemProviders: [NSItemProvider]) {
+        let acceptableProviders = itemProviders.filter {
+            $0.hasItemConformingToTypeIdentifier(UTType.plainText.identifier)
+                || $0.hasItemConformingToTypeIdentifier(UTType.url.identifier)
+        }
+        guard !acceptableProviders.isEmpty else { return }
 
-extension MediaPreviewController: QLPreviewControllerDataSource {
-    func numberOfPreviewItems(in controller: QLPreviewController) -> Int {
-        return 1
-    }
+        let group = DispatchGroup()
+        let lock = NSLock()
+        var values: [String] = []
 
-    func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
-        return url as NSURL
-    }
-}
+        for provider in acceptableProviders {
+            let typeIdentifier = provider.hasItemConformingToTypeIdentifier(UTType.url.identifier)
+                ? UTType.url.identifier
+                : UTType.plainText.identifier
+            group.enter()
+            provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { item, _ in
+                let value: String?
+                switch item {
+                case let string as String:
+                    value = string
+                case let url as URL:
+                    value = url.absoluteString
+                case let data as Data:
+                    value = String(data: data, encoding: .utf8)
+                default:
+                    value = nil
+                }
+                if let value, !value.isEmpty {
+                    lock.lock()
+                    values.append(value)
+                    lock.unlock()
+                }
+                group.leave()
+            }
+        }
 
-// MARK: - Helper for finding top ViewController
-extension UIViewController {
-    func findBestViewController() -> UIViewController {
-        if let presented = self.presentedViewController {
-            return presented.findBestViewController()
-        } else if let navigation = self as? UINavigationController {
-            return navigation.topViewController?.findBestViewController() ?? self
-        } else if let tab = self as? UITabBarController {
-            return tab.selectedViewController?.findBestViewController() ?? self
-        } else {
-            return self
+        group.notify(queue: .main) { [weak self] in
+            self?.onPaste(values)
         }
     }
 }
 
-struct SettingsSheet: View {
-    @Environment(\.openURL) private var openURL
-    @AppStorage(NamingPreferences.enableKey) private var enableCustomNaming = false
-    @AppStorage(NamingPreferences.templateKey) private var customTemplate = NamingFormatter.defaultTemplate
-
-    private let tokens: [NamingToken] = [
-        NamingToken(placeholder: "{username}", title: "用户名"),
-        NamingToken(placeholder: "{userId}", title: "小红书号"),
-        NamingToken(placeholder: "{title}", title: "标题"),
-        NamingToken(placeholder: "{postId}", title: "笔记ID"),
-        NamingToken(placeholder: "{publishTime}", title: "发布时间"),
-        NamingToken(placeholder: "{downloadTimestamp}", title: "开始下载时的时间戳"),
-//        NamingToken(placeholder: "{index}", title: "第几张（自然数）"),
-//        NamingToken(placeholder: "{index_padded}", title: "第几张（两位数）")
-    ]
+private struct TaskCardView: View {
+    let task: DownloadTaskRecord
+    @ObservedObject var coordinator: DownloadCoordinator
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-//                Capsule()
-//                    .fill(Color.secondary.opacity(0.25))
-//                    .frame(width: 40, height: 4)
-//                    .frame(maxWidth: .infinity)
-//                    .padding(.top, 8)
-
-//                Text("设置")
-//                    .font(.title3)
-//                    .fontWeight(.semibold)
-
-                Toggle("启用自定义命名格式", isOn: $enableCustomNaming)
-                    .toggleStyle(SwitchToggleStyle(tint: .accentColor))
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("当前命名格式")
-                        .font(.headline)
-
-                    TextEditor(text: $customTemplate)
-                        .frame(minHeight: 80, maxHeight: 120)
-                        .font(.system(.body, design: .monospaced))
-                        .padding(12)
-                        .background(RoundedRectangle(cornerRadius: 16).stroke(Color.secondary.opacity(0.2)))
-                        .disabled(!enableCustomNaming)
-                        .opacity(enableCustomNaming ? 1 : 0.4)
-
-                    Text("例如：{title}_{publishTime}_{downloadTimestamp}")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-
-                    Text("可自定义任意字符与字段组合，字段使用花括号包裹；文件末尾会自动追加编号保障唯一。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-
-                    Button("重置为默认格式") {
-                        customTemplate = NamingFormatter.defaultTemplate
-                    }
-                    .disabled(!enableCustomNaming)
-                }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("可用字段")
-                        .font(.headline)
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                        ForEach(tokens) { token in
-                            Button {
-                                appendPlaceholder(token.placeholder)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(token.placeholder)
-                                        .font(.caption)
-                                        .fontWeight(.semibold)
-                                        .foregroundStyle(.primary)
-                                    Text(token.title)
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                }
-                                .padding(10)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(RoundedRectangle(cornerRadius: 14).fill(Color(.secondarySystemBackground)))
-                            }
-                            .disabled(!enableCustomNaming)
-                        }
-                    }
-
-                    Text("点击字段可插入占位符，系统会在末尾自动追加编号保障唯一。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                Divider()
-                
-                // 版本号显示
-                VStack {
-                    HStack {
-                        Text("版本号")
-                        Spacer()
-                        Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")")
-                            .foregroundColor(.gray)
-                    }
-                }
-//                .padding(.top, 10)
-
-                Button {
-                    if let githubURL = URL(string: "https://github.com/NEORUAA/XHS_Downloader_iOS") {
-                        openURL(githubURL)
-                    }
-                } label: {
-                    HStack {
-                        Spacer()
-                        Text("打开GitHub仓库")
-                            .fontWeight(.semibold)
-                            .padding(.vertical, 10)
-                        Spacer()
-                    }
-                }
-                .adaptiveGlassEffect()
-                .buttonStyle(.borderedProminent)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Label(L10n.text(task.status.localizationKey), systemImage: statusSymbol)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(statusColor)
+                Spacer()
+                Text(task.updatedAt, style: .time)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .padding(24)
+
+            Text(task.title.isEmpty ? L10n.text("task.resolving") : task.title)
+                .font(.headline)
+                .lineLimit(2)
+
+            HStack {
+                Text(L10n.text(task.noteType.localizationKey))
+                Spacer()
+                Text(L10n.format("task.media_count", task.savedCount, task.mediaCount))
+            }
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+
+            ProgressView(value: task.progress)
+                .tint(statusColor)
+
+            if let error = task.errorMessage, !error.isEmpty {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+            }
+
+            HStack {
+                if task.status == .downloading || task.status == .queued {
+                    Button(L10n.text("action.stop")) { coordinator.stop(taskID: task.id) }
+                        .buttonStyle(.bordered)
+                        .tint(.red)
+                }
+                if task.status == .failed {
+                    Button(L10n.text("action.retry")) { coordinator.retry(taskID: task.id) }
+                        .buttonStyle(.bordered)
+                }
+                if task.status == .waitingForUser {
+                    Label(L10n.text("action.choose_media"), systemImage: "checkmark.circle")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                }
+                Spacer()
+            }
         }
-        .onAppear {
-            if customTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                customTemplate = NamingFormatter.defaultTemplate
-            }
+        .padding(.vertical, 6)
+    }
+
+    private var statusColor: Color {
+        switch task.status {
+        case .queued: return .secondary
+        case .downloading: return .blue
+        case .completed: return .green
+        case .failed: return .red
+        case .waitingForUser: return .orange
         }
     }
 
-    private func appendPlaceholder(_ placeholder: String) {
-        guard enableCustomNaming else { return }
-        if customTemplate.isEmpty {
-            customTemplate = placeholder
-        } else {
-            if customTemplate.last?.isWhitespace == false {
-                customTemplate.append(" ")
-            }
-            customTemplate.append(placeholder)
+    private var statusSymbol: String {
+        switch task.status {
+        case .queued: return "clock"
+        case .downloading: return "arrow.down.circle"
+        case .completed: return "checkmark.circle.fill"
+        case .failed: return "exclamationmark.triangle.fill"
+        case .waitingForUser: return "hand.tap.fill"
         }
-    }
-
-    struct NamingToken: Identifiable {
-        let placeholder: String
-        let title: String
-        var id: String { placeholder }
     }
 }
 
-private actor ThumbnailGenerator {
-    static let shared = ThumbnailGenerator()
+private struct ContentUnavailableCard: View {
+    let filter: TaskFilter
 
-    func thumbnail(for item: MediaPreviewItem) async -> UIImage? {
-        if item.isVideo {
-            let asset = AVAsset(url: item.localURL)
-            let generator = AVAssetImageGenerator(asset: asset)
-            generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = CGSize(width: 600, height: 600)
-            let time = CMTime(seconds: 0.1, preferredTimescale: 600)
-            if let cgImage = try? generator.copyCGImage(at: time, actualTime: nil) {
-                return UIImage(cgImage: cgImage)
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: filter == .all ? "arrow.down.doc" : "line.3.horizontal.decrease.circle")
+                .font(.system(size: 42))
+                .foregroundStyle(.secondary)
+            Text(L10n.text(filter == .all ? "empty.title" : "empty.filtered.title"))
+                .font(.headline)
+            Text(L10n.text(filter == .all ? "empty.subtitle" : "empty.filtered.subtitle"))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 42)
+    }
+}
+
+private struct TaskDetailView: View {
+    let taskID: UUID
+    @ObservedObject var coordinator: DownloadCoordinator
+    @State private var section = 0
+    @State private var previewIdentifier: String?
+    @State private var confirmsPhotoDeletion = false
+
+    private var task: DownloadTaskRecord? {
+        coordinator.tasks.first { $0.id == taskID }
+    }
+
+    var body: some View {
+        Group {
+            if let task {
+                ScrollView {
+                    VStack(spacing: 16) {
+                        Picker(L10n.text("detail.section"), selection: $section) {
+                            Text(L10n.text("detail.files")).tag(0)
+                            Text(L10n.text("detail.caption")).tag(1)
+                        }
+                        .pickerStyle(.segmented)
+
+                        if section == 0 {
+                            mediaSection(task)
+                        } else {
+                            captionSection(task)
+                        }
+                    }
+                    .padding()
+                }
+                .navigationTitle(task.title.isEmpty ? L10n.text("detail.title") : task.title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        ShareSheetButton(items: shareItems(task))
+                    }
+                }
+                .sheet(item: Binding(
+                    get: { previewIdentifier.map(PreviewIdentifier.init) },
+                    set: { previewIdentifier = $0?.value }
+                )) { item in
+                    PhotoPreview(localIdentifier: item.value)
+                }
+            } else {
+                Text(L10n.text("error.task_missing"))
+                    .foregroundStyle(.secondary)
             }
-            return nil
-        } else {
-            return UIImage(contentsOfFile: item.localURL.path)
         }
     }
+
+    @ViewBuilder
+    private func mediaSection(_ task: DownloadTaskRecord) -> some View {
+        if task.mediaAssets.isEmpty {
+            ContentUnavailableCard(filter: .all)
+        } else {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 10)], spacing: 10) {
+                ForEach(task.mediaAssets) { asset in
+                    Button { previewIdentifier = asset.localIdentifier } label: {
+                        VStack(spacing: 0) {
+                            ZStack(alignment: .bottomTrailing) {
+                                PhotoAssetThumbnail(localIdentifier: asset.localIdentifier)
+                                    .frame(minHeight: 150)
+                                if asset.isVideo {
+                                    Image(systemName: "play.circle.fill")
+                                        .font(.title2)
+                                        .foregroundStyle(.white)
+                                        .shadow(radius: 3)
+                                        .padding(8)
+                                }
+                            }
+                            MediaAssetMetadataFooter(asset: asset)
+                        }
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            Button(role: .destructive) { confirmsPhotoDeletion = true } label: {
+                Label(L10n.text("task.delete.photos"), systemImage: "trash")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .confirmationDialog(
+                L10n.text("task.delete.photos.confirm"),
+                isPresented: $confirmsPhotoDeletion,
+                titleVisibility: .visible
+            ) {
+                Button(L10n.text("task.delete.photos"), role: .destructive) {
+                    Task { await coordinator.deleteTask(taskID: task.id, deletePhotos: true) }
+                }
+                Button(L10n.text("common.cancel"), role: .cancel) {}
+            }
+        }
+    }
+
+    private func captionSection(_ task: DownloadTaskRecord) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(task.noteText.isEmpty ? L10n.text("detail.no_caption") : task.noteText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+            Button {
+                UIPasteboard.general.string = task.noteText
+            } label: {
+                Label(L10n.text("action.copy_caption"), systemImage: "doc.on.doc")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(task.noteText.isEmpty)
+        }
+        .padding()
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private func shareItems(_ task: DownloadTaskRecord) -> [Any] {
+        var items: [Any] = []
+        if !task.noteText.isEmpty { items.append(task.noteText) }
+        if let url = URL(string: task.normalizedURL) { items.append(url) }
+        return items
+    }
+}
+
+private struct PreviewIdentifier: Identifiable {
+    let value: String
+    var id: String { value }
+}
+
+private struct PhotoAssetThumbnail: View {
+    let localIdentifier: String
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Rectangle()
+                    .fill(Color(uiColor: .tertiarySystemFill))
+                    .overlay { ProgressView() }
+            }
+        }
+        .clipped()
+        .task(id: localIdentifier) { load() }
+    }
+
+    private func load() {
+        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject else { return }
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .opportunistic
+        options.resizeMode = .fast
+        PHImageManager.default().requestImage(
+            for: asset,
+            targetSize: CGSize(width: 500, height: 500),
+            contentMode: .aspectFill,
+            options: options
+        ) { image, _ in
+            if let image { self.image = image }
+        }
+    }
+}
+
+
+private struct MediaAssetMetadataFooter: View {
+    let asset: MediaAssetRecord
+
+    @State private var fallbackPixelWidth: Int?
+    @State private var fallbackPixelHeight: Int?
+    @State private var fallbackByteCount: Int64?
+    @State private var resourceRequestID: PHAssetResourceDataRequestID?
+
+    private var pixelWidth: Int? { asset.pixelWidth ?? fallbackPixelWidth }
+    private var pixelHeight: Int? { asset.pixelHeight ?? fallbackPixelHeight }
+    private var byteCount: Int64? { asset.byteCount ?? fallbackByteCount }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(resolutionText)
+            Spacer(minLength: 4)
+            Text(fileSizeText)
+        }
+        .font(.caption2.monospacedDigit())
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .task(id: asset.localIdentifier) { loadFallbackMetadata() }
+        .onDisappear { cancelResourceRequest() }
+    }
+
+    private var resolutionText: String {
+        guard let pixelWidth, let pixelHeight, pixelWidth > 0, pixelHeight > 0 else { return "—" }
+        return "\(pixelWidth) × \(pixelHeight)"
+    }
+
+    private var fileSizeText: String {
+        guard let byteCount, byteCount > 0 else { return "—" }
+        return ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file)
+    }
+
+    private func loadFallbackMetadata() {
+        guard let photoAsset = PHAsset.fetchAssets(
+            withLocalIdentifiers: [asset.localIdentifier],
+            options: nil
+        ).firstObject else { return }
+
+        if asset.pixelWidth == nil || asset.pixelHeight == nil {
+            fallbackPixelWidth = photoAsset.pixelWidth
+            fallbackPixelHeight = photoAsset.pixelHeight
+        }
+
+        guard asset.byteCount == nil, resourceRequestID == nil else { return }
+        let resources = PHAssetResource.assetResources(for: photoAsset)
+        let preferredType: PHAssetResourceType = asset.isVideo ? .video : .photo
+        guard let resource = resources.first(where: { $0.type == preferredType }) ?? resources.first else { return }
+
+        let options = PHAssetResourceRequestOptions()
+        options.isNetworkAccessAllowed = true
+        let lock = NSLock()
+        var receivedByteCount: Int64 = 0
+        resourceRequestID = PHAssetResourceManager.default().requestData(
+            for: resource,
+            options: options,
+            dataReceivedHandler: { data in
+                lock.lock()
+                receivedByteCount += Int64(data.count)
+                lock.unlock()
+            },
+            completionHandler: { error in
+                lock.lock()
+                let finalByteCount = receivedByteCount
+                lock.unlock()
+                DispatchQueue.main.async {
+                    if error == nil, finalByteCount > 0 {
+                        fallbackByteCount = finalByteCount
+                    }
+                    resourceRequestID = nil
+                }
+            }
+        )
+    }
+
+    private func cancelResourceRequest() {
+        guard let resourceRequestID else { return }
+        PHAssetResourceManager.default().cancelDataRequest(resourceRequestID)
+        self.resourceRequestID = nil
+    }
+}
+
+private struct PhotoPreview: View {
+    let localIdentifier: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var image: UIImage?
+
+    var body: some View {
+        NavigationView {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                } else {
+                    ProgressView().tint(.white)
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(L10n.text("common.done")) { dismiss() }
+                }
+            }
+        }
+        .task { load() }
+    }
+
+    private func load() {
+        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject else { return }
+        let options = PHImageRequestOptions()
+        options.isNetworkAccessAllowed = true
+        options.deliveryMode = .highQualityFormat
+        PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, _, _, _ in
+            if let data { image = UIImage(data: data) }
+        }
+    }
+}
+
+private struct SelectiveDownloadView: View {
+    @ObservedObject var coordinator: DownloadCoordinator
+
+    private var state: SelectiveDownloadState? { coordinator.selectionState }
+
+    private func masonryColumns(for items: [SelectiveMediaItem]) -> [[SelectiveMediaItem]] {
+        var columns: [[SelectiveMediaItem]] = [[], []]
+        var estimatedHeights: [CGFloat] = [0, 0]
+
+        for item in items {
+            let targetColumn = estimatedHeights[0] <= estimatedHeights[1] ? 0 : 1
+            columns[targetColumn].append(item)
+            estimatedHeights[targetColumn] += (1 / thumbnailAspectRatio(for: item)) + 0.08
+        }
+        return columns
+    }
+
+    private func thumbnailAspectRatio(for item: SelectiveMediaItem) -> CGFloat {
+        guard !item.remote.isVideo, let image = UIImage(contentsOfFile: item.cachedURL.path), image.size.height > 0 else {
+            return 9 / 16
+        }
+        return min(max(image.size.width / image.size.height, 0.5), 1.8)
+    }
+
+    private func selectiveMediaTile(_ item: SelectiveMediaItem) -> some View {
+        Button {
+            coordinator.updateSelection(id: item.id, selected: !item.isSelected)
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                CachedMediaThumbnail(item: item)
+                    .aspectRatio(thumbnailAspectRatio(for: item), contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                Image(systemName: item.isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title2)
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, item.isSelected ? Color.accentColor : Color.black.opacity(0.35))
+                    .padding(8)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    var body: some View {
+        NavigationView {
+            Group {
+                if let state {
+                    ScrollView {
+                        HStack(alignment: .top, spacing: 12) {
+                            ForEach(Array(masonryColumns(for: state.items).enumerated()), id: \.offset) { _, column in
+                                LazyVStack(spacing: 12) {
+                                    ForEach(column) { item in
+                                        selectiveMediaTile(item)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .top)
+                            }
+                        }
+                        .padding()
+                    }
+                    .overlay {
+                        if state.phase == .caching || state.phase == .saving {
+                            ZStack {
+                                Color.black.opacity(0.12).ignoresSafeArea()
+                                ProgressView(state.phase == .caching ? L10n.text("selection.caching") : L10n.text("selection.saving"))
+                                    .padding(24)
+                                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            }
+                        }
+                    }
+                } else {
+                    ProgressView()
+                }
+            }
+            .navigationTitle(L10n.text("selection.title"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.text("common.cancel")) { coordinator.cancelSelection() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(L10n.text("selection.save")) { coordinator.saveSelection() }
+                        .disabled(state?.phase != .ready || state?.items.contains(where: \.isSelected) != true)
+                }
+                ToolbarItem(placement: .bottomBar) {
+                    Text(L10n.format("selection.count", state?.items.filter(\.isSelected).count ?? 0, state?.items.count ?? 0))
+                        .font(.footnote.weight(.semibold))
+                }
+            }
+        }
+    }
+}
+
+private struct CachedMediaThumbnail: View {
+    let item: SelectiveMediaItem
+
+    var body: some View {
+        ZStack {
+            if item.remote.isVideo {
+                Rectangle().fill(Color.black)
+                Image(systemName: "play.circle.fill")
+                    .font(.largeTitle)
+                    .foregroundStyle(.white)
+            } else if let image = UIImage(contentsOfFile: item.cachedURL.path) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Rectangle().fill(Color(uiColor: .tertiarySystemFill))
+                Image(systemName: "photo")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .clipped()
+    }
+}
+
+private struct ManualInputView: View {
+    @ObservedObject var coordinator: DownloadCoordinator
+    @Environment(\.dismiss) private var dismiss
+    @State private var input = ""
+    @State private var isExtracting = false
+    @State private var extractedCaption = ""
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text(L10n.text("manual.section.input"))) {
+                    TextEditor(text: $input)
+                        .frame(minHeight: 150)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+                if !extractedCaption.isEmpty {
+                    Section(header: Text(L10n.text("detail.caption"))) {
+                        Text(extractedCaption).textSelection(.enabled)
+                        Button(L10n.text("action.copy_caption")) { UIPasteboard.general.string = extractedCaption }
+                    }
+                }
+            }
+            .navigationTitle(L10n.text("action.manual_input"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.text("common.cancel")) { dismiss() }
+                }
+                ToolbarItemGroup(placement: .confirmationAction) {
+                    Button {
+                        extractCaption()
+                    } label: {
+                        if isExtracting { ProgressView() } else { Image(systemName: "text.quote") }
+                    }
+                    .disabled(isExtracting || !XHSURLDetector.containsSupportedLink(input))
+                    Button(L10n.text("action.download")) {
+                        coordinator.enqueue(input)
+                        dismiss()
+                    }
+                    .disabled(!XHSURLDetector.containsSupportedLink(input))
+                }
+            }
+        }
+    }
+
+    private func extractCaption() {
+        isExtracting = true
+        Task {
+            do {
+                extractedCaption = try await XHSDownloader().extractDescription(from: input) { _ in }
+            } catch {
+                coordinator.alertMessage = error.localizedDescription
+            }
+            isExtracting = false
+        }
+    }
+}
+
+private struct WebCaptureView: View {
+    let onCapture: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var address = "https://www.xiaohongshu.com/"
+    @State private var capturedURL = ""
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                HStack {
+                    TextField(L10n.text("web.address"), text: $address)
+                        .textFieldStyle(.roundedBorder)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    Button(L10n.text("web.go")) {
+                        NotificationCenter.default.post(name: .xhsWebNavigate, object: address)
+                    }
+                }
+                .padding()
+                ControlledWebView(initialAddress: address) { url in capturedURL = url }
+            }
+            .navigationTitle(L10n.text("action.web_capture"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.text("common.cancel")) { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(L10n.text("web.import")) {
+                        onCapture(capturedURL.isEmpty ? address : capturedURL)
+                        dismiss()
+                    }
+                    .disabled(!XHSURLDetector.containsSupportedLink(capturedURL.isEmpty ? address : capturedURL))
+                }
+            }
+        }
+    }
+}
+
+private extension Notification.Name {
+    static let xhsWebNavigate = Notification.Name("xhs.web.navigate")
+}
+
+private struct ControlledWebView: UIViewRepresentable {
+    let initialAddress: String
+    let onURLChange: (String) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onURLChange: onURLChange) }
+
+    func makeUIView(context: Context) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.navigationDelegate = context.coordinator
+        context.coordinator.webView = webView
+        context.coordinator.observer = NotificationCenter.default.addObserver(forName: .xhsWebNavigate, object: nil, queue: .main) { [weak webView] note in
+            guard let value = note.object as? String, let url = URL(string: value) else { return }
+            webView?.load(URLRequest(url: url))
+        }
+        if let url = URL(string: initialAddress) { webView.load(URLRequest(url: url)) }
+        return webView
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        if let observer = coordinator.observer { NotificationCenter.default.removeObserver(observer) }
+        uiView.stopLoading()
+        uiView.navigationDelegate = nil
+    }
+
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        let onURLChange: (String) -> Void
+        weak var webView: WKWebView?
+        var observer: NSObjectProtocol?
+
+        init(onURLChange: @escaping (String) -> Void) { self.onURLChange = onURLChange }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            let script = "document.querySelector('link[rel=canonical]')?.href || location.href"
+            webView.evaluateJavaScript(script) { [weak self] value, _ in
+                if let value = value as? String { self?.onURLChange(value) }
+            }
+        }
+    }
+}
+
+private struct SettingsView: View {
+    @ObservedObject var settings: AppSettings
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(NamingPreferences.enableKey) private var customNaming = false
+    @AppStorage(NamingPreferences.templateKey) private var namingTemplate = NamingFormatter.defaultTemplate
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text(L10n.text("settings.download"))) {
+                    Toggle(L10n.text("settings.live_photo"), isOn: $settings.createLivePhotos)
+                    Toggle(L10n.text("settings.selective"), isOn: $settings.selectiveDownload)
+                    Toggle(L10n.text("settings.keep_awake"), isOn: $settings.keepScreenAwake)
+                }
+                Section(header: Text(L10n.text("settings.system"))) {
+                    Toggle(L10n.text("settings.clipboard"), isOn: $settings.clipboardSuggestions)
+                    Toggle(L10n.text("settings.notifications"), isOn: $settings.debugNotifications)
+                }
+                Section(header: Text(L10n.text("settings.naming"))) {
+                    Toggle(L10n.text("settings.naming.enable"), isOn: $customNaming)
+                    if customNaming {
+                        TextField(L10n.text("settings.naming.template"), text: $namingTemplate)
+                            .textInputAutocapitalization(.never)
+                        Text(L10n.text("settings.naming.placeholders"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Section(header: Text(L10n.text("settings.about"))) {
+                    HStack {
+                        Text(L10n.text("settings.version"))
+                        Spacer()
+                        Text(version).foregroundStyle(.secondary)
+                    }
+                    Link(destination: URL(string: "https://github.com/NEORUAA/XHS_Downloader_iOS")!) {
+                        Label(L10n.text("settings.github"), systemImage: "link")
+                    }
+                }
+            }
+            .navigationTitle(L10n.text("settings.title"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(L10n.text("common.done")) { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var version: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-"
+        return "\(version) (\(build))"
+    }
+}
+
+private struct ShareSheetButton: View {
+    let items: [Any]
+    @State private var presented = false
+
+    var body: some View {
+        Button { presented = true } label: { Image(systemName: "square.and.arrow.up") }
+            .accessibilityLabel(L10n.text("common.share"))
+            .sheet(isPresented: $presented) { ActivityView(items: items) }
+            .disabled(items.isEmpty)
+    }
+}
+
+private struct ActivityView: UIViewControllerRepresentable {
+    let items: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 private extension View {
     @ViewBuilder
-    func ifAvailableiOS16<Content: View>(_ transform: (Self) -> Content) -> some View {
-        if #available(iOS 16.0, *) {
-            transform(self)
+    func xhsCompactSectionSpacing() -> some View {
+        if #available(iOS 17.0, *) {
+            self.listSectionSpacing(12)
         } else {
             self
+        }
+    }
+
+    @ViewBuilder
+    func xhsPrimaryGlass() -> some View {
+        if #available(iOS 26, *) {
+            self.glassEffect(
+                .regular.tint(.accentColor).interactive(),
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            )
+        } else {
+            self.background(Color.accentColor, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+    }
+
+    @ViewBuilder
+    func xhsCircularGlass() -> some View {
+        if #available(iOS 26, *) {
+            self.glassEffect(.regular.tint(.accentColor).interactive(), in: Circle())
+        } else {
+            self.background(Color.accentColor, in: Circle())
         }
     }
 }
 
 #Preview {
-    ContentView()
+    let settings = AppSettings()
+    ContentView(coordinator: DownloadCoordinator(settings: settings), settings: settings)
 }

@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A1000000000000000000000A /* XHSShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* XHSShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		7CC390F72EC89A9C00D373D9 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -21,12 +25,20 @@
 			remoteGlobalIDString = 7CC390E82EC89A9B00D373D9;
 			remoteInfo = XHS_Downloader_iOS;
 		};
+		A1000000000000000000000C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7CC390E12EC89A9B00D373D9 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000001;
+			remoteInfo = XHSShareExtension;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		7CC390E92EC89A9B00D373D9 /* 小红书下载器.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "小红书下载器.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		7CC390F62EC89A9C00D373D9 /* XHS_Downloader_iOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XHS_Downloader_iOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7CC391002EC89A9C00D373D9 /* XHS_Downloader_iOSUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XHS_Downloader_iOSUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000002 /* XHSShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = XHSShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -43,6 +55,11 @@
 		7CC391032EC89A9C00D373D9 /* XHS_Downloader_iOSUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = XHS_Downloader_iOSUITests;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000003 /* ShareExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ShareExtension;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -69,6 +86,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -78,6 +102,7 @@
 				7CC390EB2EC89A9B00D373D9 /* XHS_Downloader_iOS */,
 				7CC390F92EC89A9C00D373D9 /* XHS_Downloader_iOSTests */,
 				7CC391032EC89A9C00D373D9 /* XHS_Downloader_iOSUITests */,
+				A10000000000000000000003 /* ShareExtension */,
 				7CC390EA2EC89A9B00D373D9 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -88,11 +113,26 @@
 				7CC390E92EC89A9B00D373D9 /* 小红书下载器.app */,
 				7CC390F62EC89A9C00D373D9 /* XHS_Downloader_iOSTests.xctest */,
 				7CC391002EC89A9C00D373D9 /* XHS_Downloader_iOSUITests.xctest */,
+				A10000000000000000000002 /* XHSShareExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A1000000000000000000000B /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A1000000000000000000000A /* XHSShareExtension.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXNativeTarget section */
 		7CC390E82EC89A9B00D373D9 /* XHS_Downloader_iOS */ = {
@@ -102,10 +142,12 @@
 				7CC390E52EC89A9B00D373D9 /* Sources */,
 				7CC390E62EC89A9B00D373D9 /* Frameworks */,
 				7CC390E72EC89A9B00D373D9 /* Resources */,
+				A1000000000000000000000B /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				A1000000000000000000000D /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				7CC390EB2EC89A9B00D373D9 /* XHS_Downloader_iOS */,
@@ -163,6 +205,28 @@
 			productReference = 7CC391002EC89A9C00D373D9 /* XHS_Downloader_iOSUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		A10000000000000000000001 /* XHSShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000007 /* Build configuration list for PBXNativeTarget "XHSShareExtension" */;
+			buildPhases = (
+				A10000000000000000000004 /* Sources */,
+				A10000000000000000000005 /* Frameworks */,
+				A10000000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A10000000000000000000003 /* ShareExtension */,
+			);
+			name = XHSShareExtension;
+			packageProductDependencies = (
+			);
+			productName = XHSShareExtension;
+			productReference = A10000000000000000000002 /* XHSShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -184,6 +248,9 @@
 						CreatedOnToolsVersion = 26.1.1;
 						TestTargetID = 7CC390E82EC89A9B00D373D9;
 					};
+					A10000000000000000000001 = {
+						CreatedOnToolsVersion = 27.0;
+					};
 				};
 			};
 			buildConfigurationList = 7CC390E42EC89A9B00D373D9 /* Build configuration list for PBXProject "XHS_Downloader_iOS" */;
@@ -192,6 +259,8 @@
 			knownRegions = (
 				en,
 				Base,
+				"zh-Hans",
+				"zh-Hant",
 			);
 			mainGroup = 7CC390E02EC89A9B00D373D9;
 			minimizedProjectReferenceProxies = 1;
@@ -203,6 +272,7 @@
 				7CC390E82EC89A9B00D373D9 /* XHS_Downloader_iOS */,
 				7CC390F52EC89A9C00D373D9 /* XHS_Downloader_iOSTests */,
 				7CC390FF2EC89A9C00D373D9 /* XHS_Downloader_iOSUITests */,
+				A10000000000000000000001 /* XHSShareExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -223,6 +293,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		7CC390FE2EC89A9C00D373D9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000006 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -253,6 +330,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -265,6 +349,11 @@
 			isa = PBXTargetDependency;
 			target = 7CC390E82EC89A9B00D373D9 /* XHS_Downloader_iOS */;
 			targetProxy = 7CC391012EC89A9C00D373D9 /* PBXContainerItemProxy */;
+		};
+		A1000000000000000000000D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000000001 /* XHSShareExtension */;
+			targetProxy = A1000000000000000000000C /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -395,6 +484,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = xhsdn;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = XHS_Downloader_iOS/XHS_Downloader_iOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = TCKG4XJ3G2;
@@ -415,6 +505,7 @@
 				);
 				MARKETING_VERSION = 1.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.neoruaa.xhsdn;
+				PRODUCT_MODULE_NAME = XHS_Downloader_iOS;
 				PRODUCT_NAME = "小红书下载器";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -431,6 +522,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = xhsdn;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = XHS_Downloader_iOS/XHS_Downloader_iOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = TCKG4XJ3G2;
@@ -451,6 +543,7 @@
 				);
 				MARKETING_VERSION = 1.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.neoruaa.xhsdn;
+				PRODUCT_MODULE_NAME = XHS_Downloader_iOS;
 				PRODUCT_NAME = "小红书下载器";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -480,7 +573,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/XHS_Downloader_iOS.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/XHS_Downloader_iOS";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/小红书下载器.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/小红书下载器";
 			};
 			name = Debug;
 		};
@@ -502,7 +595,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/XHS_Downloader_iOS.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/XHS_Downloader_iOS";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/小红书下载器.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/小红书下载器";
 			};
 			name = Release;
 		};
@@ -546,6 +639,68 @@
 			};
 			name = Release;
 		};
+		A10000000000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = TCKG4XJ3G2;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "ShareExtension-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.neoruaa.xhsdn.ShareExtension;
+				PRODUCT_MODULE_NAME = XHSShareExtension;
+				PRODUCT_NAME = XHSShareExtension;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A10000000000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = TCKG4XJ3G2;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "ShareExtension-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.neoruaa.xhsdn.ShareExtension;
+				PRODUCT_MODULE_NAME = XHSShareExtension;
+				PRODUCT_NAME = XHSShareExtension;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -581,6 +736,15 @@
 			buildConfigurations = (
 				7CC391112EC89A9C00D373D9 /* Debug */,
 				7CC391122EC89A9C00D373D9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000000007 /* Build configuration list for PBXNativeTarget "XHSShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000000008 /* Debug */,
+				A10000000000000000000009 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

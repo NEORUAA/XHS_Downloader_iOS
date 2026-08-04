@@ -41,17 +41,17 @@ enum XHSDownloaderError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidURL:
-            return "分享链接格式不正确"
+            return L10n.text("error.invalid_url")
         case .requestFailed:
-            return "网络请求失败，请稍后重试"
+            return L10n.text("error.request_failed")
         case .permissionDenied:
-            return "缺少必要的权限"
+            return L10n.text("error.permission")
         case .missingLinks:
-            return "未检测到有效的小红书链接"
+            return L10n.text("error.no_link")
         case .parsingFailed:
-            return "笔记内容解析失败"
+            return L10n.text("error.parsing")
         case .emptyMedia:
-            return "未找到任何可下载的媒体资源"
+            return L10n.text("error.empty_media")
         }
     }
 }
@@ -65,7 +65,7 @@ final class XHSDownloader {
     private let xhsLinkRegex = try! NSRegularExpression(pattern: "(?:https?://)?www\\.xiaohongshu\\.com/explore/\\S+", options: .caseInsensitive)
     private let xhsUserRegex = try! NSRegularExpression(pattern: "(?:https?://)?www\\.xiaohongshu\\.com/user/profile/[a-z0-9]+/\\S+", options: .caseInsensitive)
     private let xhsShareRegex = try! NSRegularExpression(pattern: "(?:https?://)?www\\.xiaohongshu\\.com/discovery/item/\\S+", options: .caseInsensitive)
-    private let xhsShortRegex = try! NSRegularExpression(pattern: "(?:https?://)?xhslink\\.com/[^\\s\\\"<>\\\\^`{|}，。；！？、【】《》]+", options: .caseInsensitive)
+    private let xhsShortRegex = try! NSRegularExpression(pattern: "(?:https?://)?xhslink\\.(?:com|cn)/[^\\s\\\"<>\\\\^`{|}，。；！？、【】《》]+", options: .caseInsensitive)
     private let idRegex = try! NSRegularExpression(pattern: "(?:explore|item)/([a-zA-Z0-9_\\-]+)/?(?:\\?|$)", options: .caseInsensitive)
     private let idUserRegex = try! NSRegularExpression(pattern: "user/profile/[a-z0-9]+/([a-zA-Z0-9_\\-]+)/?(?:\\?|$)", options: .caseInsensitive)
     private let htmlImgRegex = try! NSRegularExpression(pattern: "<img[^>]+src\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"][^>]*>", options: .caseInsensitive)
@@ -188,7 +188,7 @@ final class XHSDownloader {
 
 // MARK: - Private helpers
 
-private extension XHSDownloader {
+extension XHSDownloader {
     struct LinkContext {
         let sourceURL: URL
         let resolvedURL: URL
@@ -238,7 +238,7 @@ private extension XHSDownloader {
         guard let originalURL = URL(string: cleaned) else { return nil }
 
         var resolvedURL = originalURL
-        if cleaned.contains("xhslink.com") {
+        if cleaned.contains("xhslink.com") || cleaned.contains("xhslink.cn") {
             if let redirect = await resolveShortLink(originalURL) {
                 resolvedURL = redirect
                 await logger("短链接已解析为：\(redirect.absoluteString)")
@@ -651,7 +651,7 @@ private extension XHSDownloader {
         if let match = idUserRegex.firstMatch(in: url, options: [], range: NSRange(location: 0, length: (url as NSString).length)) {
             return (url as NSString).substring(with: match.range(at: 1))
         }
-        if url.contains("xhslink.com/") {
+        if url.contains("xhslink.com/") || url.contains("xhslink.cn/") {
             let components = url.split(separator: "/").map(String.init)
             if let last = components.last?.split(separator: "?").first, !last.isEmpty, last != "o" {
                 return String(last)
@@ -836,12 +836,6 @@ private extension XHSDownloader {
                     return description.trimmingCharacters(in: .whitespacesAndNewlines)
                 }
             }
-        }
-
-        // 检查是否有摘要字段
-        if let interactInfo = note["interactInfo"] as? [String: Any],
-           let commentCount = interactInfo["commentCount"] as? Int {
-            // 这里我们不直接返回评论数，而是继续寻找描述
         }
 
         return nil

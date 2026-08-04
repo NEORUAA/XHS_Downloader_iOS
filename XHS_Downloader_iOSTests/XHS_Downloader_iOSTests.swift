@@ -1,17 +1,68 @@
-//
-//  XHS_Downloader_iOSTests.swift
-//  XHS_Downloader_iOSTests
-//
-//  Created by NEORUAA Q on 2025/11/15.
-//
-
+import Foundation
 import Testing
 @testable import XHS_Downloader_iOS
 
 struct XHS_Downloader_iOSTests {
-
-    @Test func example() async throws {
-        // Write your test here and use APIs like `#expect(...)` to check expected conditions.
+    @Test func extractsSupportedDomainsAndShareText() {
+        let input = "看看这篇 https://www.xiaohongshu.com/explore/abc123?x=1 还有 https://xhslink.cn/AbCdE。重复 https://xhslink.cn/AbCdE"
+        let links = XHSURLDetector.extract(from: input)
+        #expect(links == [
+            "https://www.xiaohongshu.com/explore/abc123?x=1",
+            "https://xhslink.cn/AbCdE"
+        ])
     }
 
+    @Test func persistsTasksAtomically() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = DownloadTaskStore(fileURL: directory.appendingPathComponent("tasks.json"))
+        let task = DownloadTaskRecord(
+            sourceText: "share text",
+            normalizedURL: "https://xhslink.com/example",
+            title: "Example",
+            status: .completed,
+            progress: 1,
+            mediaCount: 3,
+            savedCount: 3
+        )
+
+        try store.save([task])
+        let loaded = try #require(store.load().first)
+        #expect(loaded.id == task.id)
+        #expect(loaded.normalizedURL == task.normalizedURL)
+        #expect(loaded.status == .completed)
+        #expect(loaded.mediaCount == 3)
+        #expect(abs(loaded.createdAt.timeIntervalSince(task.createdAt)) < 1)
+    }
+
+    @Test func namingTemplateSupportsAndroidPlaceholders() {
+        let preferences = NamingPreferences(enabled: true, template: "{username}_{postId}_{index_padded}")
+        let name = NamingFormatter.makeBaseName(
+            metadata: NoteMetadata(userName: "A/B", userId: nil, title: nil, publishTime: nil),
+            fallbackPostId: "post-1",
+            index: 2,
+            downloadEpochSeconds: 123,
+            preferences: preferences
+        )
+        #expect(name == "A_B_post-1_02_02")
+    }
+
+    @Test func interruptedTasksBecomeRetryableFailures() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = DownloadTaskStore(fileURL: directory.appendingPathComponent("tasks.json"))
+        let task = DownloadTaskRecord(
+            sourceText: "share text",
+            normalizedURL: "https://xhslink.com/example",
+            status: .downloading,
+            progress: 0.4
+        )
+        try store.save([task])
+
+        let settings = await MainActor.run { AppSettings(defaults: UserDefaults(suiteName: UUID().uuidString)!) }
+        let coordinator = await MainActor.run { DownloadCoordinator(settings: settings, store: store) }
+        let recovered = await MainActor.run { coordinator.tasks.first }
+        #expect(recovered?.status == .failed)
+        #expect(recovered?.progress == 0.4)
+    }
 }

@@ -1,330 +1,562 @@
-//
-//  DownloaderViewModel.swift
-//  XHS_Downloader_iOS
-//
-//  Created by Codex on behalf of user.
-//
-
-import SwiftUI
+import Foundation
+import Combine
 import Photos
 import UIKit
-import Combine
+import UserNotifications
+import AVFoundation
+import ImageIO
 
-struct MediaPreviewItem: Identifiable, Hashable {
-    let id = UUID()
-    let localURL: URL
-    let isVideo: Bool
+private final class IdentifierBox: @unchecked Sendable {
+    var value: String?
+}
 
-    var fileName: String {
-        return localURL.lastPathComponent
-    }
+enum PhotoLibraryError: LocalizedError {
+    case permissionDenied
+    case saveFailed
 
-    var fileSize: Int64 {
-        do {
-            let attributes = try FileManager.default.attributesOfItem(atPath: localURL.path)
-            return attributes[.size] as? Int64 ?? 0
-        } catch {
-            return 0
+    var errorDescription: String? {
+        switch self {
+        case .permissionDenied: return L10n.text("error.photo_permission")
+        case .saveFailed: return L10n.text("error.photo_save")
         }
-    }
-
-    var path: String {
-        return localURL.path
     }
 }
 
-struct LogEntry: Identifiable, Hashable {
-    private static let formatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        return formatter
-    }()
-
-    let id = UUID()
-    let timestamp = Date()
-    let message: String
-
-    var displayText: String {
-        "[\(Self.formatter.string(from: timestamp))] \(message)"
-    }
-}
-
-final class DownloaderViewModel: ObservableObject {
-    @Published var shareText: String = ""
-    @Published private(set) var logEntries: [LogEntry] = []
-    @Published private(set) var mediaItems: [MediaPreviewItem] = []
-    @Published var isDownloading = false
-    @Published var showProgress = false
-    @Published var progressValue = 0.0
-    @Published var progressText = ""
-    @Published var showSettingsSheet = false
-    @Published var shouldSwitchToLogTab = false
-
-    private let downloader = XHSDownloader()
-
-    func startDownload() {
-        let trimmed = shareText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            appendLog("请输入分享文本后再开始下载")
-            return
-        }
-        guard !isDownloading else { return }
-
-        // 清空已有日志
-        logEntries.removeAll()
-
-        isDownloading = true
-        showProgress = false
-        progressValue = 0
-        progressText = ""
-        mediaItems.removeAll()
-        appendLog("准备开始解析分享内容…")
-
-        // 设置标志以切换到日志页
-        shouldSwitchToLogTab = true
-
-        Task {
-            do {
-                try await ensurePhotoLibraryPermission()
-                await MainActor.run { self.appendLog("已获得相册访问权限") }
-
-                let remoteMedia = try await downloader.collectMedia(from: trimmed) { [weak self] message in
-                    guard let self else { return }
-                    await MainActor.run {
-                        self.appendLog(message)
-                    }
-                }
-
-                guard !remoteMedia.isEmpty else {
-                    await MainActor.run {
-                        self.appendLog("没有检测到可下载的媒体资源")
-                        self.isDownloading = false
-                    }
-                    return
-                }
-
-                await MainActor.run {
-                    self.showProgress = true
-                    self.progressText = "0/\(remoteMedia.count)"
-                    self.progressValue = 0
-                }
-
-                try await download(mediaItems: remoteMedia)
-
-                await MainActor.run {
-                    self.appendLog("全部媒体已保存到系统相册")
-                    self.isDownloading = false
-                    self.showProgress = false
-                }
-            } catch {
-                await MainActor.run {
-                    self.appendLog("下载失败：\(error.userFacingMessage)")
-                    self.isDownloading = false
-                    self.showProgress = false
-                }
-            }
-        }
-    }
-
-    func copyDescription(completion: @escaping (String) -> Void) {
-        let trimmed = shareText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            completion("请输入分享文本后再提取文案")
-            return
-        }
-
-        Task {
-            do {
-                let description = try await downloader.extractDescription(from: trimmed) { [weak self] message in
-                    guard let self else { return }
-                    await MainActor.run {
-                        self.appendLog(message)
-                    }
-                }
-
-                await MainActor.run {
-                    UIPasteboard.general.string = description
-                    completion("已复制文案到剪贴板")
-                }
-            } catch {
-                await MainActor.run {
-                    completion("提取文案失败：\(error.localizedDescription)")
-                }
-            }
-        }
-    }
-
-    @MainActor
-    func appendLog(_ message: String) {
-        logEntries.append(LogEntry(message: message))
-    }
-
-    private func download(mediaItems: [RemoteMedia]) async throws {
-        let timestamp = downloader.makeSessionTimestamp()
-        let total = mediaItems.count
-
-        for (index, media) in mediaItems.enumerated() {
-            try Task.checkCancellation()
-            let fileURL = try await downloader.download(media: media, sessionTimestamp: timestamp)
-            try await saveToPhotoLibrary(fileURL: fileURL, isVideo: media.isVideo)
-
-            await MainActor.run {
-                let current = index + 1
-                self.progressValue = Double(current) / Double(total)
-                self.progressText = "\(current)/\(total)"
-                self.mediaItems.append(MediaPreviewItem(localURL: fileURL, isVideo: media.isVideo))
-            }
-        }
-    }
-
-    private func ensurePhotoLibraryPermission() async throws {
+final class PhotoLibraryService {
+    func requestWriteAuthorization() async -> Bool {
+        let status: PHAuthorizationStatus
         if #available(iOS 14, *) {
-            let status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
-            switch status {
-            case .authorized, .limited:
-                return
-            case .denied, .restricted:
-                throw XHSDownloaderError.permissionDenied
-            case .notDetermined:
-                let newStatus = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
-                if newStatus == .authorized || newStatus == .limited {
-                    return
-                }
-                throw XHSDownloaderError.permissionDenied
-            @unknown default:
-                throw XHSDownloaderError.permissionDenied
-            }
+            status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
         } else {
-            let status = PHPhotoLibrary.authorizationStatus()
-            switch status {
-            case .authorized:
-                return
-            case .denied, .restricted:
-                throw XHSDownloaderError.permissionDenied
-            case .notDetermined:
-                let granted = await requestLegacyPhotoPermission()
-                if granted {
-                    return
-                }
-                throw XHSDownloaderError.permissionDenied
-            default:
-                throw XHSDownloaderError.permissionDenied
+            status = await withCheckedContinuation { continuation in
+                PHPhotoLibrary.requestAuthorization { continuation.resume(returning: $0) }
             }
         }
+        return status == .authorized || status == .limited
     }
 
-    private func requestLegacyPhotoPermission() async -> Bool {
-        await withCheckedContinuation { continuation in
-            PHPhotoLibrary.requestAuthorization { status in
-                continuation.resume(returning: status == .authorized)
-            }
+    func saveMedia(at fileURL: URL, isVideo: Bool) async throws -> String {
+        guard await requestWriteAuthorization() else {
+            throw PhotoLibraryError.permissionDenied
         }
-    }
 
-    private func saveToPhotoLibrary(fileURL: URL, isVideo: Bool) async throws {
-        do {
-            try await saveWithPhotoLibrary(fileURL: fileURL, isVideo: isVideo)
-        } catch {
-            let nsError = error as NSError
-            if nsError.domain == PHPhotosErrorDomain && nsError.code == 3302 {
-                if isVideo {
-                    try await saveVideoWithUIKit(fileURL: fileURL)
-                } else {
-                    try await saveImageWithUIKit(fileURL: fileURL)
-                }
-            } else {
-                throw error
-            }
-        }
-    }
-
-    private func saveWithPhotoLibrary(fileURL: URL, isVideo: Bool) async throws {
+        let identifier = IdentifierBox()
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            PHPhotoLibrary.shared().performChanges({
-                if isVideo {
-                    PHAssetCreationRequest.creationRequestForAssetFromVideo(atFileURL: fileURL)
-                } else {
-                    PHAssetCreationRequest.creationRequestForAssetFromImage(atFileURL: fileURL)
-                }
-            }) { success, error in
+            PHPhotoLibrary.shared().performChanges {
+                let request = PHAssetCreationRequest.forAsset()
+                let resourceType: PHAssetResourceType = isVideo ? .video : .photo
+                request.addResource(with: resourceType, fileURL: fileURL, options: nil)
+                identifier.value = request.placeholderForCreatedAsset?.localIdentifier
+            } completionHandler: { success, error in
                 if let error {
                     continuation.resume(throwing: error)
                 } else if success {
-                    continuation.resume(returning: ())
+                    continuation.resume()
                 } else {
-                    continuation.resume(throwing: XHSDownloaderError.requestFailed)
+                    continuation.resume(throwing: PhotoLibraryError.saveFailed)
+                }
+            }
+        }
+
+        guard let value = identifier.value else {
+            throw PhotoLibraryError.saveFailed
+        }
+        return value
+    }
+
+    func saveLivePhoto(photoURL: URL, pairedVideoURL: URL) async throws -> String {
+        guard await requestWriteAuthorization() else {
+            throw PhotoLibraryError.permissionDenied
+        }
+
+        let identifier = IdentifierBox()
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            PHPhotoLibrary.shared().performChanges {
+                let request = PHAssetCreationRequest.forAsset()
+                request.addResource(with: .photo, fileURL: photoURL, options: nil)
+                request.addResource(with: .pairedVideo, fileURL: pairedVideoURL, options: nil)
+                identifier.value = request.placeholderForCreatedAsset?.localIdentifier
+            } completionHandler: { success, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if success {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: PhotoLibraryError.saveFailed)
+                }
+            }
+        }
+
+        guard let value = identifier.value else {
+            throw PhotoLibraryError.saveFailed
+        }
+        return value
+    }
+
+    func deleteAssets(localIdentifiers: [String]) async throws {
+        let assets = PHAsset.fetchAssets(withLocalIdentifiers: localIdentifiers, options: nil)
+        guard assets.count > 0 else { return }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.deleteAssets(assets)
+            } completionHandler: { success, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if success {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: PhotoLibraryError.saveFailed)
                 }
             }
         }
     }
+}
 
-    private func saveImageWithUIKit(fileURL: URL) async throws {
-        let data = try Data(contentsOf: fileURL)
-        guard let image = UIImage(data: data) else {
-            throw XHSDownloaderError.parsingFailed
-        }
+@MainActor
+final class DownloadCoordinator: ObservableObject {
+    @Published private(set) var tasks: [DownloadTaskRecord]
+    @Published var selectionState: SelectiveDownloadState?
+    @Published var alertMessage: String?
+    @Published private(set) var lastLogMessage: String = ""
 
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            UIKitPhotoSaver.shared.storeContinuation(continuation)
-            UIImageWriteToSavedPhotosAlbum(
-                image,
-                UIKitPhotoSaver.shared,
-                #selector(UIKitPhotoSaver.imageSaveCompleted(_:didFinishSavingWithError:contextInfo:)),
-                nil
-            )
+    let settings: AppSettings
+
+    private let store: DownloadTaskStore
+    private let downloader: XHSDownloader
+    private let photoLibrary: PhotoLibraryService
+    private var jobs: [UUID: Task<Void, Never>] = [:]
+
+    init(
+        settings: AppSettings,
+        store: DownloadTaskStore? = nil,
+        downloader: XHSDownloader? = nil,
+        photoLibrary: PhotoLibraryService? = nil
+    ) {
+        self.settings = settings
+        self.store = store ?? DownloadTaskStore()
+        self.downloader = downloader ?? XHSDownloader()
+        self.photoLibrary = photoLibrary ?? PhotoLibraryService()
+        self.tasks = self.store.load().sorted { $0.createdAt > $1.createdAt }
+        recoverInterruptedTasks()
+    }
+
+    deinit {
+        jobs.values.forEach { $0.cancel() }
+    }
+
+    var waitingCount: Int { tasks.filter { $0.status == .waitingForUser }.count }
+    var failedCount: Int { tasks.filter { $0.status == .failed }.count }
+
+    func filteredTasks(for filter: TaskFilter) -> [DownloadTaskRecord] {
+        switch filter {
+        case .all: return tasks
+        case .waiting: return tasks.filter { $0.status == .waitingForUser }
+        case .failed: return tasks.filter { $0.status == .failed }
         }
     }
 
-    private func saveVideoWithUIKit(fileURL: URL) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            UIKitPhotoSaver.shared.storeContinuation(continuation)
-            UISaveVideoAtPathToSavedPhotosAlbum(
-                fileURL.path,
-                UIKitPhotoSaver.shared,
-                #selector(UIKitPhotoSaver.videoSaveCompleted(_:didFinishSavingWithError:contextInfo:)),
-                nil
-            )
+    func enqueue(_ input: String) {
+        let links = XHSURLDetector.extract(from: input)
+        guard !links.isEmpty else {
+            alertMessage = L10n.text("error.no_link")
+            return
+        }
+
+        var accepted = 0
+        for link in links {
+            if isDuplicate(link) {
+                continue
+            }
+            let task = DownloadTaskRecord(sourceText: input, normalizedURL: link)
+            tasks.insert(task, at: 0)
+            persist()
+            start(taskID: task.id)
+            accepted += 1
+        }
+
+        if accepted == 0 {
+            alertMessage = L10n.text("error.duplicate")
         }
     }
 
-    func removeMediaItem(_ item: MediaPreviewItem) {
-        DispatchQueue.main.async {
-            self.mediaItems.removeAll { $0.id == item.id }
+    func consumeSharedInbox() {
+        for item in SharedInbox.consume() {
+            enqueue(item.text)
+        }
+    }
+
+    func stop(taskID: UUID) {
+        jobs[taskID]?.cancel()
+        jobs[taskID] = nil
+        update(taskID) { task in
+            task.status = .failed
+            task.errorMessage = L10n.text("error.cancelled")
+        }
+        if selectionState?.taskID == taskID {
+            cleanupSelectionFiles(selectionState)
+            selectionState = nil
+        }
+    }
+
+    func retry(taskID: UUID) {
+        guard jobs[taskID] == nil else { return }
+        update(taskID) { task in
+            task.status = .queued
+            task.progress = 0
+            task.failedCount = 0
+            task.errorMessage = nil
+        }
+        start(taskID: taskID)
+    }
+
+    func deleteTask(taskID: UUID, deletePhotos: Bool) async {
+        guard let task = tasks.first(where: { $0.id == taskID }) else { return }
+        stopSilently(taskID: taskID)
+        if deletePhotos {
+            do {
+                try await photoLibrary.deleteAssets(localIdentifiers: task.mediaAssets.map(\.localIdentifier))
+            } catch {
+                alertMessage = error.localizedDescription
+                return
+            }
+        }
+        tasks.removeAll { $0.id == taskID }
+        persist()
+    }
+
+    func clearHistory() {
+        for id in jobs.keys { jobs[id]?.cancel() }
+        jobs.removeAll()
+        cleanupSelectionFiles(selectionState)
+        selectionState = nil
+        tasks.removeAll()
+        persist()
+    }
+
+    func updateSelection(id: UUID, selected: Bool) {
+        guard var state = selectionState,
+              let index = state.items.firstIndex(where: { $0.id == id }) else { return }
+        state.items[index].isSelected = selected
+        selectionState = state
+    }
+
+    func cancelSelection() {
+        guard let state = selectionState else { return }
+        cleanupSelectionFiles(state)
+        selectionState = nil
+        update(state.taskID) { task in
+            task.status = .failed
+            task.errorMessage = L10n.text("error.selection_cancelled")
+        }
+    }
+
+    func saveSelection() {
+        guard var state = selectionState, state.phase == .ready else { return }
+        let selectedItems = state.items.filter(\.isSelected)
+        guard !selectedItems.isEmpty else {
+            alertMessage = L10n.text("error.selection_empty")
+            return
+        }
+        state.phase = .saving
+        selectionState = state
+        let taskID = state.taskID
+        jobs[taskID] = Task { [weak self] in
+            guard let self else { return }
+            await self.saveCachedItems(selectedItems, taskID: taskID, allItems: state.items)
+        }
+    }
+
+    private func start(taskID: UUID) {
+        jobs[taskID] = Task { [weak self] in
+            guard let self else { return }
+            await self.run(taskID: taskID)
+        }
+    }
+
+    private func run(taskID: UUID) async {
+        guard let task = task(for: taskID) else { return }
+        update(taskID) { record in
+            record.status = .downloading
+            record.errorMessage = nil
+        }
+
+        do {
+            let media = try await downloader.collectMedia(from: task.normalizedURL) { _ in }
+            try Task.checkCancellation()
+            guard !media.isEmpty else { throw XHSDownloaderError.emptyMedia }
+
+            let noteText = (try? await downloader.extractDescription(from: task.normalizedURL) { _ in }) ?? ""
+            let noteType = inferNoteType(media)
+            update(taskID) { record in
+                record.mediaCount = media.count
+                record.noteType = noteType
+                record.noteText = noteText
+                if record.title.isEmpty {
+                    record.title = noteText.firstNonemptyLine ?? media.first?.fileBaseName ?? L10n.text("task.untitled")
+                }
+            }
+
+            if settings.selectiveDownload {
+                try await cacheForSelection(media, taskID: taskID)
+            } else {
+                try await downloadAndSave(media, taskID: taskID)
+            }
+        } catch is CancellationError {
+            update(taskID) { record in
+                record.status = .failed
+                record.errorMessage = L10n.text("error.cancelled")
+            }
+        } catch {
+            update(taskID) { record in
+                record.status = .failed
+                record.errorMessage = error.localizedDescription
+                record.failedCount = max(1, record.mediaCount - record.savedCount)
+            }
+            await postNotification(taskID: taskID, success: false)
+        }
+        jobs[taskID] = nil
+    }
+
+    private func downloadAndSave(_ media: [RemoteMedia], taskID: UUID) async throws {
+        var saved = 0
+        var failed = 0
+        let sessionTimestamp = downloader.makeSessionTimestamp()
+
+        for (index, item) in media.enumerated() {
+            try Task.checkCancellation()
+            do {
+                let fileURL = try await downloader.download(media: item, sessionTimestamp: sessionTimestamp)
+                defer { try? FileManager.default.removeItem(at: fileURL) }
+                try Task.checkCancellation()
+                let metadata = MediaFileMetadata(url: fileURL, isVideo: item.isVideo)
+                let localIdentifier = try await photoLibrary.saveMedia(at: fileURL, isVideo: item.isVideo)
+                saved += 1
+                update(taskID) { task in
+                    task.savedCount = saved
+                    task.mediaAssets.append(MediaAssetRecord(
+                        localIdentifier: localIdentifier,
+                        fileName: fileURL.lastPathComponent,
+                        isVideo: item.isVideo,
+                        pixelWidth: metadata.pixelWidth,
+                        pixelHeight: metadata.pixelHeight,
+                        byteCount: metadata.byteCount
+                    ))
+                    task.progress = Double(index + 1) / Double(media.count)
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                failed += 1
+                update(taskID) { task in
+                    task.failedCount = failed
+                    task.progress = Double(index + 1) / Double(media.count)
+                    task.errorMessage = error.localizedDescription
+                }
+            }
+        }
+
+        finish(taskID: taskID, expected: media.count, saved: saved, failed: failed)
+    }
+
+    private func cacheForSelection(_ media: [RemoteMedia], taskID: UUID) async throws {
+        let sessionTimestamp = downloader.makeSessionTimestamp()
+        var items: [SelectiveMediaItem] = []
+        selectionState = SelectiveDownloadState(taskID: taskID, phase: .caching, items: [])
+
+        for (index, item) in media.enumerated() {
+            try Task.checkCancellation()
+            let fileURL = try await downloader.download(media: item, sessionTimestamp: sessionTimestamp)
+            items.append(SelectiveMediaItem(id: item.id, remote: item, cachedURL: fileURL, isSelected: true))
+            update(taskID) { task in
+                task.progress = Double(index + 1) / Double(media.count) * 0.5
+            }
+            selectionState = SelectiveDownloadState(taskID: taskID, phase: .caching, items: items)
+        }
+
+        update(taskID) { task in
+            task.status = .waitingForUser
+            task.progress = 0.5
+        }
+        selectionState = SelectiveDownloadState(taskID: taskID, phase: .ready, items: items)
+    }
+
+    private func saveCachedItems(
+        _ selectedItems: [SelectiveMediaItem],
+        taskID: UUID,
+        allItems: [SelectiveMediaItem]
+    ) async {
+        var saved = 0
+        var failed = 0
+        for (index, item) in selectedItems.enumerated() {
+            do {
+                try Task.checkCancellation()
+                let metadata = MediaFileMetadata(url: item.cachedURL, isVideo: item.remote.isVideo)
+                let identifier = try await photoLibrary.saveMedia(at: item.cachedURL, isVideo: item.remote.isVideo)
+                saved += 1
+                update(taskID) { task in
+                    task.savedCount = saved
+                    task.mediaAssets.append(MediaAssetRecord(
+                        localIdentifier: identifier,
+                        fileName: item.cachedURL.lastPathComponent,
+                        isVideo: item.remote.isVideo,
+                        pixelWidth: metadata.pixelWidth,
+                        pixelHeight: metadata.pixelHeight,
+                        byteCount: metadata.byteCount
+                    ))
+                    task.progress = 0.5 + (Double(index + 1) / Double(selectedItems.count) * 0.5)
+                }
+            } catch is CancellationError {
+                update(taskID) { task in
+                    task.status = .failed
+                    task.errorMessage = L10n.text("error.cancelled")
+                }
+                cleanupSelectionFiles(SelectiveDownloadState(taskID: taskID, phase: .saving, items: allItems))
+                selectionState = nil
+                jobs[taskID] = nil
+                return
+            } catch {
+                failed += 1
+                update(taskID) { task in
+                    task.failedCount = failed
+                    task.errorMessage = error.localizedDescription
+                }
+            }
+        }
+
+        cleanupSelectionFiles(SelectiveDownloadState(taskID: taskID, phase: .saving, items: allItems))
+        selectionState = nil
+        finish(taskID: taskID, expected: selectedItems.count, saved: saved, failed: failed)
+        jobs[taskID] = nil
+    }
+
+    private func finish(taskID: UUID, expected: Int, saved: Int, failed: Int) {
+        update(taskID) { task in
+            task.savedCount = saved
+            task.failedCount = failed
+            task.progress = 1
+            if saved == expected && failed == 0 {
+                task.status = .completed
+                task.errorMessage = nil
+            } else {
+                task.status = .failed
+                task.errorMessage = L10n.format("error.partial_failure", saved, expected)
+            }
+        }
+        Task { await postNotification(taskID: taskID, success: failed == 0 && saved == expected) }
+    }
+
+    private func postNotification(taskID: UUID, success: Bool) async {
+        guard settings.debugNotifications,
+              let task = task(for: taskID) else { return }
+        let center = UNUserNotificationCenter.current()
+        let granted = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
+        guard granted else { return }
+        let content = UNMutableNotificationContent()
+        content.title = success ? L10n.text("notification.completed") : L10n.text("notification.failed")
+        content.body = task.title.isEmpty ? task.normalizedURL : task.title
+        content.sound = .default
+        try? await center.add(UNNotificationRequest(identifier: task.id.uuidString, content: content, trigger: nil))
+    }
+
+    private func inferNoteType(_ media: [RemoteMedia]) -> NoteType {
+        let videos = media.filter(\.isVideo).count
+        if videos == 0 { return .image }
+        if videos == media.count { return .video }
+        return settings.createLivePhotos && videos == 1 && media.count == 2 ? .livePhoto : .mixed
+    }
+
+    private func isDuplicate(_ normalizedURL: String) -> Bool {
+        let threshold = Date().addingTimeInterval(-3600)
+        return tasks.contains { $0.normalizedURL == normalizedURL && $0.createdAt >= threshold }
+    }
+
+    private func task(for id: UUID) -> DownloadTaskRecord? {
+        tasks.first { $0.id == id }
+    }
+
+    private func update(_ id: UUID, mutation: (inout DownloadTaskRecord) -> Void) {
+        guard let index = tasks.firstIndex(where: { $0.id == id }) else { return }
+        mutation(&tasks[index])
+        tasks[index].updatedAt = Date()
+        persist()
+    }
+
+    private func persist() {
+        do {
+            try store.save(tasks)
+        } catch {
+            alertMessage = L10n.format("error.persistence", error.localizedDescription)
+        }
+    }
+
+    private func recoverInterruptedTasks() {
+        var changed = false
+        for index in tasks.indices where tasks[index].status == .queued || tasks[index].status == .downloading || tasks[index].status == .waitingForUser {
+            tasks[index].status = .failed
+            tasks[index].errorMessage = L10n.text("error.interrupted")
+            tasks[index].updatedAt = Date()
+            changed = true
+        }
+        if changed { persist() }
+    }
+
+    private func cleanupSelectionFiles(_ state: SelectiveDownloadState?) {
+        state?.items.forEach { try? FileManager.default.removeItem(at: $0.cachedURL) }
+    }
+
+    private func stopSilently(taskID: UUID) {
+        jobs[taskID]?.cancel()
+        jobs[taskID] = nil
+        if selectionState?.taskID == taskID {
+            cleanupSelectionFiles(selectionState)
+            selectionState = nil
         }
     }
 }
 
-private extension Error {
-    var userFacingMessage: String {
-        if let localized = self as? LocalizedError, let desc = localized.errorDescription {
-            return desc
-        }
-        return localizedDescription
+private extension String {
+    var firstNonemptyLine: String? {
+        split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty })
     }
 }
 
-private final class UIKitPhotoSaver: NSObject {
-    static let shared = UIKitPhotoSaver()
-    private var continuation: CheckedContinuation<Void, Error>?
 
-    func storeContinuation(_ continuation: CheckedContinuation<Void, Error>) {
-        self.continuation = continuation
-    }
+private struct MediaFileMetadata {
+    let pixelWidth: Int?
+    let pixelHeight: Int?
+    let byteCount: Int64?
 
-    @objc func imageSaveCompleted(_ image: UIImage, didFinishSavingWithError error: Error?, contextInfo: UnsafeRawPointer?) {
-        complete(with: error)
-    }
-
-    @objc func videoSaveCompleted(_ videoPath: NSString, didFinishSavingWithError error: Error?, contextInfo: UnsafeRawPointer?) {
-        complete(with: error)
-    }
-
-    private func complete(with error: Error?) {
-        if let error {
-            continuation?.resume(throwing: error)
+    init(url: URL, isVideo: Bool) {
+        let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey])
+        if let fileSize = resourceValues?.fileSize, fileSize > 0 {
+            byteCount = Int64(fileSize)
         } else {
-            continuation?.resume(returning: ())
+            byteCount = nil
         }
-        continuation = nil
+
+        if isVideo {
+            let asset = AVURLAsset(url: url)
+            if let track = asset.tracks(withMediaType: .video).first {
+                let transformedSize = track.naturalSize.applying(track.preferredTransform)
+                pixelWidth = Int(abs(transformedSize.width).rounded())
+                pixelHeight = Int(abs(transformedSize.height).rounded())
+            } else {
+                pixelWidth = nil
+                pixelHeight = nil
+            }
+        } else if
+            let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+            let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+            let height = properties[kCGImagePropertyPixelHeight] as? NSNumber
+        {
+            pixelWidth = width.intValue
+            pixelHeight = height.intValue
+        } else {
+            pixelWidth = nil
+            pixelHeight = nil
+        }
     }
 }
