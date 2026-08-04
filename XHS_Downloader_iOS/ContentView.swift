@@ -579,32 +579,72 @@ private struct TaskDetailView: View {
         }
     }
 
+    private func masonryColumns(for assets: [MediaAssetRecord]) -> [[MediaAssetRecord]] {
+        var columns: [[MediaAssetRecord]] = [[], []]
+        var estimatedHeights: [CGFloat] = [0, 0]
+
+        for asset in assets {
+            let targetColumn = estimatedHeights[0] <= estimatedHeights[1] ? 0 : 1
+            columns[targetColumn].append(asset)
+            estimatedHeights[targetColumn] += (1 / thumbnailAspectRatio(for: asset)) + 0.18
+        }
+        return columns
+    }
+
+    private func thumbnailAspectRatio(for asset: MediaAssetRecord) -> CGFloat {
+        var width = asset.pixelWidth
+        var height = asset.pixelHeight
+
+        if width == nil || height == nil,
+           let photoAsset = PHAsset.fetchAssets(
+               withLocalIdentifiers: [asset.localIdentifier],
+               options: nil
+           ).firstObject {
+            width = photoAsset.pixelWidth
+            height = photoAsset.pixelHeight
+        }
+
+        guard let width, let height, width > 0, height > 0 else {
+            return asset.isVideo ? 9 / 16 : 1
+        }
+        return min(max(CGFloat(width) / CGFloat(height), 0.5), 1.8)
+    }
+
+    private func mediaTile(_ asset: MediaAssetRecord) -> some View {
+        Button { previewIdentifier = asset.localIdentifier } label: {
+            VStack(spacing: 0) {
+                ZStack(alignment: .bottomTrailing) {
+                    PhotoAssetThumbnail(localIdentifier: asset.localIdentifier)
+                        .aspectRatio(thumbnailAspectRatio(for: asset), contentMode: .fit)
+                    if asset.isVideo {
+                        Image(systemName: "play.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.white)
+                            .shadow(radius: 3)
+                            .padding(8)
+                    }
+                }
+                MediaAssetMetadataFooter(asset: asset)
+            }
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
     @ViewBuilder
     private func mediaSection(_ task: DownloadTaskRecord) -> some View {
         if task.mediaAssets.isEmpty {
             ContentUnavailableCard(filter: .all)
         } else {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 10)], spacing: 10) {
-                ForEach(task.mediaAssets) { asset in
-                    Button { previewIdentifier = asset.localIdentifier } label: {
-                        VStack(spacing: 0) {
-                            ZStack(alignment: .bottomTrailing) {
-                                PhotoAssetThumbnail(localIdentifier: asset.localIdentifier)
-                                    .frame(minHeight: 150)
-                                if asset.isVideo {
-                                    Image(systemName: "play.circle.fill")
-                                        .font(.title2)
-                                        .foregroundStyle(.white)
-                                        .shadow(radius: 3)
-                                        .padding(8)
-                                }
-                            }
-                            MediaAssetMetadataFooter(asset: asset)
+            HStack(alignment: .top, spacing: 10) {
+                ForEach(Array(masonryColumns(for: task.mediaAssets).enumerated()), id: \.offset) { _, column in
+                    LazyVStack(spacing: 10) {
+                        ForEach(column) { asset in
+                            mediaTile(asset)
                         }
-                        .background(Color(uiColor: .secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
-                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .top)
                 }
             }
 
