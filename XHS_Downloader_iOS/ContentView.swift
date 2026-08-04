@@ -369,27 +369,45 @@ private final class PasteControlContainerView: UIView {
     }
 
     override func paste(itemProviders: [NSItemProvider]) {
+        // UIPasteControl is an explicit user paste action. Prefer the pasteboard's
+        // original string because an item provider may expose only a detected URL
+        // representation and discard the surrounding XHS share text.
+        if let clipboardText = UIPasteboard.general.string,
+           !clipboardText.isEmpty {
+            onPaste([clipboardText])
+            return
+        }
+
         let acceptableProviders = itemProviders.filter {
             $0.hasItemConformingToTypeIdentifier(UTType.plainText.identifier)
                 || $0.hasItemConformingToTypeIdentifier(UTType.url.identifier)
         }
-        guard !acceptableProviders.isEmpty else { return }
+        guard !acceptableProviders.isEmpty else {
+            onPaste([])
+            return
+        }
 
         let group = DispatchGroup()
         let lock = NSLock()
         var values: [String] = []
 
         for provider in acceptableProviders {
-            let typeIdentifier = provider.hasItemConformingToTypeIdentifier(UTType.url.identifier)
-                ? UTType.url.identifier
-                : UTType.plainText.identifier
+            // Share text can advertise both URL and plain-text representations.
+            // Prefer the complete text so surrounding XHS share copy is preserved.
+            let typeIdentifier = provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier)
+                ? UTType.plainText.identifier
+                : UTType.url.identifier
             group.enter()
             provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { item, _ in
                 let value: String?
                 switch item {
                 case let string as String:
                     value = string
+                case let string as NSString:
+                    value = string as String
                 case let url as URL:
+                    value = url.absoluteString
+                case let url as NSURL:
                     value = url.absoluteString
                 case let data as Data:
                     value = String(data: data, encoding: .utf8)

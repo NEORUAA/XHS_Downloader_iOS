@@ -12,6 +12,13 @@ struct XHS_Downloader_iOSTests {
         ])
     }
 
+    @Test func extractsExactXHSShareTextFromClipboard() {
+        let input = "🐰夏天跟兔兔一起度过！ 萤火虫d3阿米娅@uuohz 📷富士... http://xhslink.cn/o/6k5VEtmd2WX \n复制这段，去【小红书】发现更多好内容~"
+        #expect(XHSURLDetector.extract(from: input) == [
+            "http://xhslink.cn/o/6k5VEtmd2WX"
+        ])
+    }
+
     @Test func persistsTasksAtomically() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
